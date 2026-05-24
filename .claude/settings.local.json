@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-src-dir --no-import-alias --turbopack)",
+      "Bash(cp /Users/kumarjha/Code/likeness-vid-gen/CLAUDE.md /tmp/CLAUDE_backup.md)",
+      "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-src-dir --no-import-alias --turbopack --yes)"
+    ]
+  }
+}
