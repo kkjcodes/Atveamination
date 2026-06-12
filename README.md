@@ -4,7 +4,7 @@
 
 Upload a photo → pick a cartoon style → clone your voice → write scenes with AI → get a fully animated, narrated video. No editing skills. No studio. No waiting list.
 
-**~$0.11 per second of finished video.** Synthesia charges $3–8/min for generic talking heads. HeyGen's custom avatar tier starts at $120/month. This produces a more personalized product at a fraction of the cost — and runs on a single 2 GB container.
+**~$0.11 per second of finished video.** Personalized cartoon character, voice clone, and animated scenes — all on a single 2 GB container.
 
 > Built solo. Shipped to production. Running live at [atveanimation.com](https://atveanimation.com).
 
@@ -45,7 +45,7 @@ WAN I2V generates video to an approximate target duration. XTTS-v2 generates aud
 Turbopack rewrites `__dirname` to `/ROOT` in the production bundle. Both `ffmpeg-static` and `ffprobe-static` use `__dirname` to locate their binaries — so they silently resolve to paths that don't exist at runtime. The fix: bypass the package exports entirely and construct binary paths from `process.cwd()` at runtime. Also: `lavfi` (used to generate silence for scenes without audio) is not compiled into the static FFmpeg binary. Replaced with a Node.js PCM WAV writer that generates valid silence without any FFmpeg format dependency.
 
 ### Running a 2 GB container without serverless timeouts
-Scene generation takes 60–180 seconds per scene. No serverless platform can handle this — Vercel times out at 60s on the free tier, Lambda caps at 15 minutes with painful cold starts. Azure Container Apps with `minReplicas: 0` solves this cleanly: scale to zero when idle (zero cost), scale to 3 replicas under load, no request timeout ceiling. Cold start is 5–8 seconds — acceptable for a generate flow where users expect to wait.
+Scene generation takes 60–180 seconds per scene. Serverless platforms with short function timeout ceilings can't handle this. Azure Container Apps with `minReplicas: 0` solves this cleanly: scale to zero when idle (zero cost), scale to 3 replicas under load, no request timeout ceiling. Cold start is 5–8 seconds — acceptable for a generate flow where users expect to wait.
 
 ### Prompt sanitization for downstream content filters
 The internal Claude-based moderation allows cartoon violence and mature themes. fal.ai's content filter does not. Rather than blocking legitimate animated content, a pre-submission rewriter (Claude Haiku, <300ms) rewrites the video prompt — replacing specific trigger words (`rifle` → `energy beam`, `explosion` → `burst of light`) while preserving all story and character context. Zero user-visible impact; zero blocked legitimate generations.
@@ -64,21 +64,9 @@ Per scene, per output second of finished video:
 | Content moderation + rewriting | Claude Haiku (Anthropic) | <$0.001 |
 | **Total per scene** | | **~$0.55** |
 
-**~$0.11 per second of final video output.**
+**~$0.11 per second of final video output** (~$6.60/min of finished video).
 
-### vs. The Competition
-
-These figures are directional and time-bound (June 2026) — exact rates shift, but the order-of-magnitude gap is structural.
-
-| Product | What you get | Cost per minute of video |
-|---|---|---|
-| **AtVeAnimation** | Personalized cartoon character + voice clone + animated scenes | **~$6.60** |
-| Synthesia | Generic stock avatar, no style customization | $30–120 |
-| HeyGen custom avatar | Photo-realistic talking head, no cartoon | Starts at $120/mo plan |
-| Runway Gen-3 | Video generation only, no character consistency | ~$12–24 |
-| D-ID | Talking portrait, no style transfer | ~$18 |
-
-AtVeAnimation is the only product in this comparison that does LoRA-based identity preservation, cross-scene character consistency, and voice cloning together — at any price point. The gap closes further at scale: infrastructure is ~$30–50/month fixed, amortized across users.
+Infrastructure is ~$30–50/month fixed, amortized across users.
 
 ---
 
@@ -232,7 +220,7 @@ npm run dev                   # http://localhost:3000
 
 ## Deploy to Production
 
-Scene generation runs for 60–180 seconds per scene. This rules out Vercel, Netlify, Lambda, and any platform with sub-60s function timeouts. Azure Container Apps handles long-running HTTP with no configuration changes.
+Scene generation runs for 60–180 seconds per scene. This rules out serverless platforms with short function timeout ceilings. Azure Container Apps handles long-running HTTP with no configuration changes.
 
 **Provisioned on first deploy:**
 - Azure Container Registry — Docker image storage
