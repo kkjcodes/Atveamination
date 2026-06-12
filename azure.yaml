@@ -1,0 +1,12 @@
+name: atveanimation
+services:
+  web:
+    project: .
+    host: containerapp
+    language: js
+    docker:
+      path: ./Dockerfile
+      context: .
+      platform: linux/amd64
+      buildArgs:
+        - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}

@@ -1,0 +1,23 @@
+import { NextResponse } from "next/server"
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth/config"
+import { checkSceneLimit, checkBriefLimit, checkTrainingLimit } from "@/lib/limits"
+
+export async function GET() {
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const userId = session.user.id
+
+  const role = session.user.role
+  const [scenes, briefs, training] = await Promise.all([
+    checkSceneLimit(userId, role),
+    checkBriefLimit(userId, role),
+    checkTrainingLimit(userId, role),
+  ])
+
+  return NextResponse.json({
+    scenes: { used: scenes.used, limit: scenes.limit, resetsAt: scenes.resetsAt },
+    briefs: { used: briefs.used, limit: briefs.limit, resetsAt: briefs.resetsAt },
+    training: { used: training.used, limit: training.limit, resetsAt: training.resetsAt },
+  })
+}

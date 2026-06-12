@@ -1,0 +1,11 @@
+.next
+node_modules
+.git
+.gitignore
+.env*
+__tests__
+playwright-report
+test-results
+README.md
+*.md
+!CLAUDE.md

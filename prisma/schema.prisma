@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  FREE
+  SUPER_USER
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role                UserRole  @default(FREE)
+  passwordResetToken  String?   @map("password_reset_token")
+  passwordResetExpiry DateTime? @map("password_reset_expiry")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  characters Character[]
+  voices     Voice[]
+  projects   Project[]
+  jobs       Job[]
+
+  @@map("users")
+}
+
+model Character {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  name               String   @default("My Character")
+  sourcePhotoUrl     String   @map("source_photo_url")
+  selectedStyleUrl   String?  @map("selected_style_url")
+  characterDescription String? @map("character_description")
+  selectedStyle      String?  @map("selected_style")
+  trainingImages     Json?    @map("training_images")
+  augmentStatus      String?  @map("augment_status")
+  loraVersion        String?  @map("lora_version")
+  loraTrainingStatus String?  @map("lora_training_status")
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  options CharacterOption[]
+  voices  Voice[]
+
+  @@map("characters")
+}
+
+model CharacterOption {
+  id          String   @id @default(uuid())
+  characterId String   @map("character_id")
+  styleUrl    String   @map("style_url")
+  styleName   String   @map("style_name")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@map("character_options")
+}
+
+model Voice {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  characterId    String   @map("character_id")
+  sampleAudioUrl String?  @map("sample_audio_url")
+  ttsParams      Json     @default("{}") @map("tts_params")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  projects  Project[]
+
+  @@map("voices")
+}
+
+model Project {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  characterId   String?  @map("character_id")
+  voiceId       String?  @map("voice_id")
+  title         String   @default("Untitled Video")
+  status        String   @default("pending")
+  finalVideoUrl String?  @map("final_video_url")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voice  Voice?  @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+  scenes Scene[]
+
+  @@map("projects")
+}
+
+model Scene {
+  id              String   @id @default(uuid())
+  projectId       String   @map("project_id")
+  orderIndex      Int      @default(0) @map("order_index")
+  description        String
+  voiceScript        String?  @map("voice_script")
+  generationPhase    String?  @map("generation_phase")
+  imagePredictionId  String?  @map("image_prediction_id")
+  videoPredictionId  String?  @map("video_prediction_id")
+  audioPredictionId  String?  @map("audio_prediction_id")
+  imageUrl        String?  @map("image_url")
+  audioUrl        String?  @map("audio_url")
+  videoClipUrl    String?  @map("video_clip_url")
+  durationSeconds Int?     @map("duration_seconds")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("scenes")
+}
+
+model Job {
+  id                    String   @id @default(uuid())
+  userId                String   @map("user_id")
+  type                  String
+  replicatePredictionId String?  @map("replicate_prediction_id")
+  entityId              String   @map("entity_id")
+  entityType            String   @map("entity_type")
+  status                String   @default("pending")
+  result                Json?
+  error                 String?
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("jobs")
+}

@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/playwright-report
+/test-results
 
 # next.js
 /.next/
@@ -23,6 +25,25 @@
 # misc
 .DS_Store
 *.pem
+*.key
+*.p12
+*.crt
+*.cer
+
+# editor / local tooling
+.idea/
+.vscode/
+settings.local.json
+
+# claude code project files (memory, settings)
+.claude/
+memory/
+
+# azure local
+.azure/
+
+# local asset source folder (assets copied to public/landing/ for serving)
+/images/
 
 # debug
 npm-debug.log*
@@ -30,8 +51,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files — ignore all, but keep the example template
 .env*
+!.env.local.example
 
 # vercel
 .vercel
@@ -39,3 +61,5 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/lib/generated/prisma
