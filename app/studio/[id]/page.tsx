@@ -88,6 +88,8 @@ export default function StudioProjectPage() {
   const [stitching, setStitching] = useState(false)
   const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [limitReached, setLimitReached] = useState(false)
+  const [sceneQuota, setSceneQuota] = useState<{ used: number; limit: number | null; unlimited: boolean } | null>(null)
 
   const scenesRef = useRef(scenes)
   useEffect(() => { scenesRef.current = scenes }, [scenes])
@@ -95,7 +97,14 @@ export default function StudioProjectPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch(`/api/projects/${projectId}`)
+        const [res, limitsRes] = await Promise.all([
+          fetch(`/api/projects/${projectId}`),
+          fetch(`/api/limits`),
+        ])
+        if (limitsRes.ok) {
+          const limitsData = await limitsRes.json()
+          setSceneQuota({ used: limitsData.scenes.used, limit: limitsData.scenes.limit, unlimited: limitsData.unlimited })
+        }
         if (!res.ok) return
         const { project } = await res.json()
 
@@ -219,6 +228,8 @@ export default function StudioProjectPage() {
         if (genRes.status === 429) {
           setError(`Daily scene limit reached (${data.used ?? "?"}/${data.limit ?? "?"}).`)
           updateScene(index, { status: "idle" })
+          setLimitReached(true)
+          setSceneQuota((q) => q ? { ...q, used: data.used ?? q.used } : q)
           return "limit"
         }
         setError((data as { error?: string }).error ?? "Generation failed")
@@ -233,6 +244,7 @@ export default function StudioProjectPage() {
         videoClipUrl: (done.video_clip_url as string) ?? null,
         audioUrl: (done.audio_url as string) ?? null,
       })
+      setSceneQuota((q) => q && !q.unlimited ? { ...q, used: q.used + 1 } : q)
       return "done"
     } catch {
       updateScene(index, { status: "failed" })
@@ -338,6 +350,25 @@ export default function StudioProjectPage() {
             <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-2">Scenes</h2>
             <p className="text-zinc-700 font-semibold text-2xl">{scenes.length}</p>
             <p className="text-xs text-zinc-400">of {MAX_SCENES} max</p>
+
+            {sceneQuota && (
+              <div className={`mt-3 rounded-lg px-3 py-2.5 ${sceneQuota.unlimited ? "bg-violet-50" : limitReached ? "bg-red-50" : "bg-zinc-50"}`}>
+                {sceneQuota.unlimited ? (
+                  <p className="text-xs font-medium text-violet-600">Unlimited scenes — Super User</p>
+                ) : (
+                  <>
+                    <p className="text-xs font-semibold text-zinc-700">
+                      {sceneQuota.used} of {sceneQuota.limit} scenes used today
+                    </p>
+                    <p className={`text-xs mt-0.5 ${limitReached ? "text-red-500 font-medium" : "text-zinc-400"}`}>
+                      {limitReached
+                        ? "Daily limit reached · resets at midnight UTC"
+                        : `${(sceneQuota.limit ?? 0) - sceneQuota.used} remaining · resets at midnight UTC`}
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="p-6">
@@ -372,7 +403,7 @@ export default function StudioProjectPage() {
                   Download Video
                 </a>
               ) : remaining.length > 0 ? (
-                <Button onClick={generateAllRemaining} disabled={generating || stitching || scenes.every((s) => s.description.trim() === "")}>
+                <Button onClick={generateAllRemaining} disabled={generating || stitching || limitReached || scenes.every((s) => s.description.trim() === "")}>
                   {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
                 </Button>
               ) : null}
@@ -439,7 +470,7 @@ export default function StudioProjectPage() {
           )}
 
           {/* Scene list */}
-          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6 space-y-3 pb-28 md:pb-6">
+          <div className="flex-1 overflow-y-auto px-4 md:px-8 py-4 md:py-6 space-y-3 pb-36 md:pb-6">
             {scenes.map((scene, index) => (
               <SceneCard
                 key={index}
@@ -467,17 +498,28 @@ export default function StudioProjectPage() {
 
           {/* Mobile bottom bar */}
           {!finalVideoUrl && (
-            <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-zinc-200 px-4 py-3 flex gap-2">
-              {allScenesHaveClips ? (
-                <Button onClick={generateFinalVideo} disabled={stitching} className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1.5">
-                  <PlayIcon className="w-4 h-4 shrink-0" />
-                  {stitching ? "Stitching..." : "Generate Final Video"}
-                </Button>
-              ) : remaining.length > 0 ? (
-                <Button onClick={generateAllRemaining} disabled={generating || stitching} className="flex-1">
-                  {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
-                </Button>
-              ) : null}
+            <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-zinc-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+              {sceneQuota && (
+                <p className={`text-xs text-center mb-2 ${limitReached ? "text-red-500 font-medium" : sceneQuota.unlimited ? "text-violet-600 font-medium" : "text-zinc-400"}`}>
+                  {sceneQuota.unlimited
+                    ? "Unlimited scenes · Super User"
+                    : limitReached
+                    ? "Daily limit reached · resets midnight UTC"
+                    : `${(sceneQuota.limit ?? 0) - sceneQuota.used} of ${sceneQuota.limit} scenes remaining today`}
+                </p>
+              )}
+              <div className="flex gap-2">
+                {allScenesHaveClips ? (
+                  <Button onClick={generateFinalVideo} disabled={stitching} className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1.5">
+                    <PlayIcon className="w-4 h-4 shrink-0" />
+                    {stitching ? "Stitching..." : "Generate Final Video"}
+                  </Button>
+                ) : remaining.length > 0 ? (
+                  <Button onClick={generateAllRemaining} disabled={generating || stitching || limitReached} className="flex-1">
+                    {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
+                  </Button>
+                ) : null}
+              </div>
             </div>
           )}
         </main>
@@ -580,7 +622,7 @@ function SceneCard({ index, scene, disabled, characterId, onUpdate, onDelete, on
                     type="button"
                     onClick={() => onUpdate({ durationSeconds: d })}
                     disabled={isProcessing}
-                    className={`h-9 px-3 text-sm rounded-lg border font-medium transition-colors ${
+                    className={`h-11 px-3 text-sm rounded-lg border font-medium transition-colors ${
                       scene.durationSeconds === d ? "bg-violet-600 text-white border-violet-600" : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
                     } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >

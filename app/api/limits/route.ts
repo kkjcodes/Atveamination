@@ -15,9 +15,11 @@ export async function GET() {
     checkTrainingLimit(userId, role),
   ])
 
+  const unlimited = scenes.limit === Infinity
   return NextResponse.json({
-    scenes: { used: scenes.used, limit: scenes.limit, resetsAt: scenes.resetsAt },
-    briefs: { used: briefs.used, limit: briefs.limit, resetsAt: briefs.resetsAt },
-    training: { used: training.used, limit: training.limit, resetsAt: training.resetsAt },
+    unlimited,
+    scenes:   { used: scenes.used,   limit: unlimited ? null : scenes.limit,   resetsAt: scenes.resetsAt },
+    briefs:   { used: briefs.used,   limit: unlimited ? null : briefs.limit,   resetsAt: briefs.resetsAt },
+    training: { used: training.used, limit: unlimited ? null : training.limit, resetsAt: training.resetsAt },
   })
 }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import Link from "next/link"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
+import { checkTrainingLimit, checkSceneLimit } from "@/lib/limits"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -32,7 +33,8 @@ export default async function DashboardPage() {
   const userId = session.user.id
   const displayName = session.user.name ?? session.user.email ?? "there"
 
-  const [characters, projects] = await Promise.all([
+  const role = session.user.role
+  const [characters, projects, charLimit, sceneLimit] = await Promise.all([
     prisma.character.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -43,7 +45,10 @@ export default async function DashboardPage() {
       take: 10,
       include: { scenes: { select: { id: true } } },
     }),
+    checkTrainingLimit(userId, role),
+    checkSceneLimit(userId, role),
   ])
+  const isUnlimited = charLimit.limit === Infinity
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -60,8 +65,20 @@ export default async function DashboardPage() {
         {/* Characters */}
         <section className="mb-14">
           <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-zinc-900">Characters</h2>
-            <Button asChild size="sm">
+            <div>
+              <h2 className="text-xl font-semibold text-zinc-900">Characters</h2>
+              {isUnlimited ? (
+                <p className="mt-0.5 text-sm font-medium text-violet-600">Unlimited characters — Super User</p>
+              ) : (
+                <p className="mt-0.5 text-sm text-zinc-500">
+                  {characters.length} of {charLimit.limit} created
+                  {charLimit.limit - characters.length > 0
+                    ? ` · ${charLimit.limit - characters.length} slot${charLimit.limit - characters.length !== 1 ? "s" : ""} remaining`
+                    : " · limit reached"}
+                </p>
+              )}
+            </div>
+            <Button asChild size="sm" disabled={!isUnlimited && characters.length >= (charLimit.limit as number)}>
               <Link href="/character/new">+ New Character</Link>
             </Button>
           </div>
@@ -117,8 +134,8 @@ export default async function DashboardPage() {
                       </CardContent>
                     </Card>
                   </Link>
-                  {/* Delete button — sits outside the Link so it doesn't navigate */}
-                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Delete button — always visible on touch, hover-reveal on desktop */}
+                  <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                     <DeleteButton
                       url={`/api/characters/${char.id}`}
                       className="bg-white/90 border border-zinc-200 shadow-sm text-zinc-500 hover:text-red-500 hover:bg-red-50 text-xs px-2 py-1 h-auto rounded-md"
