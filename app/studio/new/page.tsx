@@ -251,11 +251,13 @@ function StudioContent() {
   const projectIdRef = useRef<string | null>(projectId)
   useEffect(() => { projectIdRef.current = projectId }, [projectId])
 
-  type UsageLimits = { used: number; limit: number; resetsAt: string | null }
+  type UsageLimits = { used: number; limit: number | null; resetsAt: string | null; unlimited: boolean }
   const [sceneUsage, setSceneUsage] = useState<UsageLimits | null>(null)
 
   useEffect(() => {
-    fetch("/api/limits").then((r) => r.json()).then((d) => setSceneUsage(d.scenes)).catch(() => {})
+    fetch("/api/limits").then((r) => r.json()).then((d) => {
+      setSceneUsage({ ...d.scenes, unlimited: d.unlimited ?? false })
+    }).catch(() => {})
   }, [])
 
   // Debounced title save
@@ -555,7 +557,7 @@ function StudioContent() {
 
   const remaining = scenes.filter((s) => !s.videoClipUrl && s.description.trim())
   const allScenesHaveClips = scenes.length > 0 && scenes.every((s) => s.videoClipUrl)
-  const atLimit = sceneUsage !== null && sceneUsage.used >= sceneUsage.limit
+  const atLimit = sceneUsage !== null && !sceneUsage.unlimited && sceneUsage.limit !== null && sceneUsage.used >= sceneUsage.limit
 
   const progressPercent =
     currentSceneIndex !== null ? Math.round(((currentSceneIndex + 1) / scenes.length) * 100) : 0
@@ -609,22 +611,26 @@ function StudioContent() {
           {sceneUsage && (
             <div className="px-6 pb-6">
               <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-3">Today&apos;s usage</h2>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-600">Scenes generated</span>
-                  <span className={`font-semibold tabular-nums ${atLimit ? "text-red-600" : sceneUsage.used >= sceneUsage.limit * 0.8 ? "text-amber-600" : "text-zinc-700"}`}>
-                    {sceneUsage.used} / {sceneUsage.limit}
-                  </span>
+              {sceneUsage.unlimited ? (
+                <p className="text-xs font-medium text-violet-600">Unlimited scenes — Super User</p>
+              ) : (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-zinc-600">Scenes generated</span>
+                    <span className={`font-semibold tabular-nums ${atLimit ? "text-red-600" : sceneUsage.used >= (sceneUsage.limit ?? 0) * 0.8 ? "text-amber-600" : "text-zinc-700"}`}>
+                      {sceneUsage.used} / {sceneUsage.limit}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-zinc-100 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${atLimit ? "bg-red-500" : sceneUsage.used >= (sceneUsage.limit ?? 0) * 0.8 ? "bg-amber-400" : "bg-violet-500"}`}
+                      style={{ width: `${Math.min(100, (sceneUsage.used / (sceneUsage.limit ?? 1)) * 100)}%` }}
+                    />
+                  </div>
+                  {sceneUsage.resetsAt && <p className="text-xs text-zinc-400">{formatReset(sceneUsage.resetsAt)}</p>}
+                  {atLimit && <p className="text-xs text-red-600 font-medium pt-0.5">Limit reached</p>}
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-zinc-100 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all ${atLimit ? "bg-red-500" : sceneUsage.used >= sceneUsage.limit * 0.8 ? "bg-amber-400" : "bg-violet-500"}`}
-                    style={{ width: `${Math.min(100, (sceneUsage.used / sceneUsage.limit) * 100)}%` }}
-                  />
-                </div>
-                {sceneUsage.resetsAt && <p className="text-xs text-zinc-400">{formatReset(sceneUsage.resetsAt)}</p>}
-                {atLimit && <p className="text-xs text-red-600 font-medium pt-0.5">Limit reached</p>}
-              </div>
+              )}
             </div>
           )}
         </aside>
