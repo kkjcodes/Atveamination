@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
         text,
         speaker: speakerDataUri,
         language: "en",
-        cleanup_voice: true,
+        cleanup_voice: false,
       },
     })
     const audio_url = Array.isArray(output) ? String(output[0]) : String(output)

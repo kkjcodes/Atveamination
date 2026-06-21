@@ -154,6 +154,7 @@ export default function StudioProjectPage() {
                 ))
               } catch {
                 setScenes((prev) => prev.map((s, i) => i === _index ? { ...s, status: "failed" as const } : s))
+                setError(`Scene ${_index + 1} failed to generate. Please try regenerating it.`)
               }
             })
           ).finally(() => setGenerating(false))
@@ -232,7 +233,9 @@ export default function StudioProjectPage() {
           setSceneQuota((q) => q ? { ...q, used: data.used ?? q.used } : q)
           return "limit"
         }
-        setError((data as { error?: string }).error ?? "Generation failed")
+        // 422 = content moderation (show the reason); other errors show friendly fallback
+        const apiMsg = (data as { error?: string }).error ?? ""
+        setError(genRes.status === 422 ? apiMsg : `Scene ${index + 1} failed to generate. Please try again.`)
         updateScene(index, { status: "failed" })
         return "failed"
       }
@@ -248,6 +251,7 @@ export default function StudioProjectPage() {
       return "done"
     } catch {
       updateScene(index, { status: "failed" })
+      setError(`Scene ${index + 1} failed to generate. Please try again.`)
       return "failed"
     }
   }, [projectId, updateScene, pollScene])
@@ -295,8 +299,8 @@ export default function StudioProjectPage() {
       }
       const { project } = await res.json()
       setFinalVideoUrl(project.final_video_url)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Stitch failed")
+    } catch {
+      setError("Failed to combine your scenes into a final video. Please try again.")
     } finally {
       setStitching(false)
     }
@@ -397,31 +401,69 @@ export default function StudioProjectPage() {
             </div>
 
             <div className="hidden md:flex items-center gap-3 shrink-0">
-              {finalVideoUrl ? (
-                <a href={finalVideoUrl} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center h-10 px-4 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors">
-                  Download Video
-                </a>
-              ) : remaining.length > 0 ? (
+              {!finalVideoUrl && remaining.length > 0 && (
                 <Button onClick={generateAllRemaining} disabled={generating || stitching || limitReached || scenes.every((s) => s.description.trim() === "")}>
                   {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
                 </Button>
-              ) : null}
+              )}
             </div>
-
-            {finalVideoUrl && (
-              <a href={finalVideoUrl} target="_blank" rel="noopener noreferrer"
-                className="md:hidden inline-flex items-center h-9 px-3 rounded-lg bg-green-600 text-white text-sm font-medium">
-                Download
-              </a>
-            )}
           </div>
 
-          {/* Final video player */}
+          {/* Final video player + export/share */}
           {finalVideoUrl && (
-            <div className="bg-black shrink-0">
-              <video src={finalVideoUrl} controls className="max-h-64 mx-auto" />
-            </div>
+            <>
+              <div className="bg-black shrink-0">
+                <video src={finalVideoUrl} controls className="max-h-64 mx-auto" />
+              </div>
+              <div className="bg-zinc-50 border-b border-zinc-200 px-4 md:px-8 py-4 shrink-0">
+                <div className="flex flex-wrap gap-6">
+                  {/* Download */}
+                  <div>
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Download</p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={finalVideoUrl}
+                        download
+                        className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                      >
+                        Landscape 16:9
+                        <span className="text-xs font-normal text-zinc-400">YouTube · Facebook · X</span>
+                      </a>
+                      <a
+                        href={`/api/projects/${projectId}/export?format=vertical`}
+                        download
+                        className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                      >
+                        Vertical 9:16
+                        <span className="text-xs font-normal text-zinc-400">Shorts · Reels · TikTok</span>
+                      </a>
+                    </div>
+                  </div>
+                  {/* Share */}
+                  <div>
+                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Share link</p>
+                    <div className="flex flex-wrap gap-2">
+                      <a
+                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent("I made this AI cartoon video with @AtVeAnimation!")}&url=${encodeURIComponent(finalVideoUrl)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                      >
+                        X / Twitter
+                      </a>
+                      <a
+                        href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(finalVideoUrl)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                      >
+                        Facebook
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           )}
 
           {/* Progress */}
@@ -612,24 +654,21 @@ function SceneCard({ index, scene, disabled, characterId, onUpdate, onDelete, on
                 rows={2}
                 disabled={isProcessing}
               />
+              {(() => {
+                const text = (scene.voiceScript || scene.description).trim()
+                const words = text ? text.split(/\s+/).length : 0
+                const estSecs = words / 2.2
+                return estSecs > 6.5 ? (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ~{Math.round(estSecs)}s of narration for a ~6s clip — audio will fade out to fit.
+                  </p>
+                ) : null
+              })()}
             </div>
             <div>
-              <Label className="text-xs text-zinc-500 mb-1 block">Duration</Label>
-              <div className="flex gap-1">
-                {([5, 10, 15] as const).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => onUpdate({ durationSeconds: d })}
-                    disabled={isProcessing}
-                    className={`h-11 px-3 text-sm rounded-lg border font-medium transition-colors ${
-                      scene.durationSeconds === d ? "bg-violet-600 text-white border-violet-600" : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {d}s
-                  </button>
-                ))}
-              </div>
+              <Label className="text-xs text-zinc-500 mb-1 block">Clip length</Label>
+              <p className="text-xs text-zinc-600 font-medium">~6 seconds</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Longer clips coming soon</p>
             </div>
           </div>
         </div>

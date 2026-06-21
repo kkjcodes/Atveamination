@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/client"
 import { replicate, MODELS, STYLE_HINTS, characterTriggerWord } from "@/lib/replicate/client"
 import { moderatePrompt } from "@/lib/ai/moderation"
 import { checkSceneLimit, logUsage } from "@/lib/limits"
+import { logError } from "@/lib/logger"
 
 async function toDataUri(url: string): Promise<string> {
   const res = await fetch(url)
@@ -61,17 +62,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // Using the immediately previous frame compounds drift — by scene 5 the character
   // has mutated significantly. Scene 1 is the canonical reference for character
   // appearance, background, and style for the entire video.
-  const anchorScene =
+  // Also fetch the immediately preceding scene description for narrative context —
+  // this prevents the model from introducing unspecified characters or storylines.
+  const [anchorScene, prevScene] = await Promise.all([
     scene.orderIndex > 0
-      ? await prisma.scene.findFirst({
+      ? prisma.scene.findFirst({
           where: { projectId: scene.projectId, orderIndex: 0 },
           select: { imageUrl: true },
         })
-      : null
+      : null,
+    scene.orderIndex > 0
+      ? prisma.scene.findFirst({
+          where: { projectId: scene.projectId, orderIndex: scene.orderIndex - 1 },
+          select: { description: true },
+        })
+      : null,
+  ])
 
   let prediction: { id: string }
 
   const imageNegativePrompt = "realistic background, photorealistic background, real world background, photograph, photography, stock photo, live action, human skin texture, blurry, low quality, nsfw, nudity, nude, explicit, sexual, adult content"
+
+  try {
 
   // Register webhook so server can drive transitions even if the browser closes.
   // Skipped in local dev since localhost isn't reachable from Replicate.
@@ -85,10 +97,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // Always reference the first scene's established character, background,
     // and style — not the immediately preceding frame — to prevent drift.
     const referenceDataUri = await toDataUri(anchorScene.imageUrl)
+    const prevContext = prevScene?.description
+      ? `This scene follows: "${prevScene.description}". `
+      : ""
     prediction = await replicate.predictions.create({
       model: MODELS.fluxKontextPro as `${string}/${string}`,
       input: {
-        prompt: `Using this as the canonical reference for character appearance, art style, and world: ${hints.image}. Show the same character doing: ${scene.description}`,
+        prompt: `Preserve the EXACT character from this reference image — identical facial features, age, body proportions, skin tone, and clothing. Do not introduce any new characters; only this one character appears. ${prevContext}This character is now: ${scene.description}. ${charDesc ? charDesc + ". " : ""}${hints.image}`,
         input_image: referenceDataUri,
         aspect_ratio: "16:9",
         output_format: "jpg",
@@ -134,22 +149,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
   }
 
-  await Promise.all([
-    prisma.scene.update({
-      where: { id },
-      data: {
-        imagePredictionId: prediction.id,
-        generationPhase: "image",
-        // Clear previous generation results so polling restarts cleanly
-        videoPredictionId: null,
-        audioPredictionId: null,
-        imageUrl: null,
-        videoClipUrl: null,
-        audioUrl: null,
-      },
-    }),
-    logUsage(userId, "scene_generate", id, "scene"),
-  ])
+    await Promise.all([
+      prisma.scene.update({
+        where: { id },
+        data: {
+          imagePredictionId: prediction.id,
+          generationPhase: "image",
+          // Clear previous generation results so polling restarts cleanly
+          videoPredictionId: null,
+          audioPredictionId: null,
+          imageUrl: null,
+          videoClipUrl: null,
+          audioUrl: null,
+        },
+      }),
+      logUsage(userId, "scene_generate", id, "scene"),
+    ])
 
-  return NextResponse.json({ status: "processing" })
+    return NextResponse.json({ status: "processing" })
+  } catch (err) {
+    logError("/api/scenes/[id]/generate", "create_prediction", { sceneId: id, userId, characterId: character.id, orderIndex: scene.orderIndex }, err)
+    await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } }).catch(() => {})
+    return NextResponse.json({ error: "Failed to start scene generation. Please try again." }, { status: 500 })
+  }
 }

@@ -916,27 +916,22 @@ function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onD
                 rows={2}
                 disabled={isProcessing}
               />
+              {(() => {
+                const text = (scene.voiceScript || scene.description).trim()
+                const words = text ? text.split(/\s+/).length : 0
+                const estSecs = words / 2.2
+                return estSecs > 6.5 ? (
+                  <p className="text-xs text-amber-600 mt-1">
+                    ~{Math.round(estSecs)}s of narration for a ~6s clip — audio will fade out to fit.
+                  </p>
+                ) : null
+              })()}
             </div>
 
             <div>
-              <Label className="text-xs text-zinc-500 mb-1 block">Duration</Label>
-              <div className="flex gap-1">
-                {([5, 10, 15] as const).map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => onUpdate({ durationSeconds: d })}
-                    disabled={isProcessing}
-                    className={`h-9 px-3 text-sm rounded-lg border font-medium transition-colors ${
-                      scene.durationSeconds === d
-                        ? "bg-violet-600 text-white border-violet-600"
-                        : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    {d}s
-                  </button>
-                ))}
-              </div>
+              <Label className="text-xs text-zinc-500 mb-1 block">Clip length</Label>
+              <p className="text-xs text-zinc-600 font-medium">~6 seconds</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Longer clips coming soon</p>
             </div>
           </div>
         </div>

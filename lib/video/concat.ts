@@ -54,17 +54,12 @@ async function createSilentWav(durationSec: number, outputPath: string): Promise
   await fs.writeFile(outputPath, buf)
 }
 
-// Returns atempo filter chain to hit target speed.
-// atempo is clamped to [0.5, 2.0] per pass, so speeds > 2x require chaining.
-function atempoFilters(speed: number): string[] {
-  const filters: string[] = []
-  let remaining = speed
-  while (remaining > 2.0) {
-    filters.push("atempo=2.0")
-    remaining /= 2.0
-  }
-  filters.push(`atempo=${remaining.toFixed(4)}`)
-  return filters
+// Returns an ffmpeg audio filter that trims audio to videoDur with a short fade-out.
+// Speeding audio up via atempo degrades clarity significantly at >1.5x; trimming
+// is always preferred because the narration was recorded at natural pace.
+function audioTrimFilter(videoDur: number): string {
+  const fadeStart = Math.max(0, videoDur - 0.4)
+  return `atrim=0:${videoDur.toFixed(3)},afade=type=out:start_time=${fadeStart.toFixed(3)}:duration=0.4`
 }
 
 async function mergeVideoAudio(
@@ -73,27 +68,25 @@ async function mergeVideoAudio(
   outputPath: string
 ): Promise<void> {
   let silencePath: string | null = null
-  let resolvedAudio: string
+  // Probe video duration first — it drives the output length
+  const videoDur = await probeDuration(videoPath)
 
+  let resolvedAudio: string
   if (audioPath) {
     resolvedAudio = audioPath
   } else {
-    // lavfi/anullsrc is not available in the static ffmpeg build; generate silence in Node instead.
     silencePath = outputPath + ".silence.wav"
-    const dur = await probeDuration(videoPath)
-    await createSilentWav(dur + 0.5, silencePath)
+    await createSilentWav(videoDur + 0.5, silencePath)
     resolvedAudio = silencePath
   }
 
   let audioFilterStr: string | null = null
   if (audioPath) {
-    const [videoDur, audioDur] = await Promise.all([
-      probeDuration(videoPath),
-      probeDuration(resolvedAudio),
-    ])
+    const audioDur = await probeDuration(resolvedAudio)
     if (videoDur > 0 && audioDur > videoDur * 1.05) {
-      const speed = Math.min(audioDur / videoDur, 4.0)
-      audioFilterStr = atempoFilters(speed).join(",")
+      // Trim audio to video length with a short fade-out.
+      // Never speed up — even 1.5x atempo noticeably degrades voice clarity.
+      audioFilterStr = audioTrimFilter(videoDur)
     }
   }
 
@@ -102,9 +95,13 @@ async function mergeVideoAudio(
       const opts = [
         "-map", "0:v:0",
         "-map", "1:a:0",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+        // Stream-copy video: WAN I2V already outputs h264, re-encoding wastes CPU
+        // and is the main cause of stitch timeouts on multi-scene projects.
+        "-c:v", "copy",
         "-c:a", "aac", "-b:a", "128k", "-ac", "2",
-        "-shortest",
+        // Drive output length by video duration, not the shorter stream.
+        // Audio naturally falls silent after it ends; video plays to completion.
+        "-t", videoDur.toFixed(3),
         "-movflags", "+faststart",
       ]
       if (audioFilterStr) opts.push("-af", audioFilterStr)

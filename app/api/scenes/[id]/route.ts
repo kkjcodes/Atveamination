@@ -6,6 +6,7 @@ import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
+import { logError } from "@/lib/logger"
 
 async function createPredictionWithRetry(
   args: Parameters<typeof replicate.predictions.create>[0],
@@ -156,6 +157,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
               resolution: "720p",
               aspect_ratio: "16:9",
               guide_scale: 8,
+              // fal-ai/wan-i2v caps at 100 frames (~6s at 16fps).
+              // Always request the maximum so users get the longest possible clip.
+              num_frames: 100,
             },
           }),
           voice?.sampleAudioUrl
@@ -163,7 +167,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
                 .then((speakerUri) =>
                   createPredictionWithRetry({
                     ...predRef(MODELS.xttsV2),
-                    input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: true },
+                    input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: false },
                   })
                 )
                 .then((pred) => { console.log("[scene/poll] audio pred created:", pred.id); return pred })
@@ -255,7 +259,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         }
       }
     } catch (e) {
-      console.error("[scene/poll] video phase error:", (e as Error)?.message)
+      logError("/api/scenes/[id]", "video_phase_poll", { sceneId: id, userId, videoPredictionId: scene.videoPredictionId, audioPredictionId: scene.audioPredictionId }, e)
       await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } })
       scene = { ...scene, generationPhase: "failed" } as typeof scene
     }

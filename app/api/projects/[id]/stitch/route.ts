@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { uploadBlob } from "@/lib/storage/client"
 import { concatenateClips } from "@/lib/video/concat"
+import { logError } from "@/lib/logger"
 import { promises as fs } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
@@ -69,8 +70,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
   } catch (err) {
     await prisma.project.update({ where: { id }, data: { status: "failed" } })
-    const message = err instanceof Error ? err.message : "Stitch failed"
-    return NextResponse.json({ error: message }, { status: 500 })
+    logError("/api/projects/[id]/stitch", "concatenate_clips", { projectId: id, userId, sceneCount: scenes.length }, err)
+    return NextResponse.json({ error: "Failed to combine scenes into final video. Please try again." }, { status: 500 })
   } finally {
     await fs.unlink(outputPath).catch(() => {})
   }
