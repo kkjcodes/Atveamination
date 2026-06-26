@@ -3,7 +3,7 @@ import type { UserRole } from "@prisma/client"
 
 export const LIMITS = {
   scenesPerDay: 10,       // ~$15/user/day worst case
-  trainingPerUser: 3,     // lifetime LoRA runs; expensive ($5–10 each)
+  trainingPerUser: 10,    // lifetime LoRA runs; expensive ($5–10 each)
   briefsPerDay: 20,       // Haiku calls; cheap but guard against bots
 } as const
 

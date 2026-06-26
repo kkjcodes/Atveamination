@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
-import { replicate, MODELS, CARTOON_STYLE_PROMPTS } from "@/lib/replicate/client"
+import { replicate, MODELS, CARTOON_STYLE_PROMPTS, STYLE_BATCH_1, STYLE_BATCH_2 } from "@/lib/replicate/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 
 async function toDataUri(url: string): Promise<string> {
@@ -32,12 +32,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: `Could not load source image: ${msg}` }, { status: 500 })
   }
 
+  const batch = req.nextUrl.searchParams.get("batch") === "2" ? STYLE_BATCH_2 : STYLE_BATCH_1
+  const styleEntries = batch.map((key) => [key, CARTOON_STYLE_PROMPTS[key]] as [string, string])
+
+  // Anchor every style transfer prompt on the character's visual description.
+  // This carries identity-critical features (e.g. "wire-rim glasses, light stubble,
+  // bindi") into the prompt so Kontext Pro doesn't simplify them away.
+  const charDesc = character.characterDescription?.trim()
+  const charAnchor = charDesc ? `The person is: ${charDesc}. ` : ""
+
   try {
     const options = await Promise.all(
-      Object.entries(CARTOON_STYLE_PROMPTS).map(async ([key, stylePrompt]) => {
+      styleEntries.map(async ([key, stylePrompt]) => {
         const output = await replicate.run(MODELS.fluxKontextPro, {
           input: {
-            prompt: stylePrompt,
+            prompt: `${charAnchor}${stylePrompt}`,
             input_image: imageDataUri,
             aspect_ratio: "1:1",
             output_format: "jpg",

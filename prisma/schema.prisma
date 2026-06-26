@@ -47,6 +47,7 @@ model Character {
   user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   options CharacterOption[]
   voices  Voice[]
+  projectCharacters ProjectCharacter[]
 
   @@map("characters")
 }
@@ -79,20 +80,40 @@ model Voice {
 }
 
 model Project {
-  id            String   @id @default(uuid())
-  userId        String   @map("user_id")
-  characterId   String?  @map("character_id")
-  voiceId       String?  @map("voice_id")
-  title         String   @default("Untitled Video")
-  status        String   @default("pending")
-  finalVideoUrl String?  @map("final_video_url")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id                    String   @id @default(uuid())
+  userId                String   @map("user_id")
+  characterId           String?  @map("character_id")
+  voiceId               String?  @map("voice_id")
+  title                 String   @default("Untitled Video")
+  status                String   @default("pending")
+  finalVideoUrl         String?  @map("final_video_url")
+  // Visual cues extracted from scene 0's keyframe via Claude vision.
+  // Injected into prompts for scenes 1-N to keep clothing/hair/accessories
+  // consistent across the video. Null until scene 0 image is generated.
+  firstFrameDescription String?  @map("first_frame_description")
+  createdAt             DateTime @default(now()) @map("created_at")
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  voice  Voice?  @relation(fields: [voiceId], references: [id], onDelete: SetNull)
-  scenes Scene[]
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voice      Voice?             @relation(fields: [voiceId], references: [id], onDelete: SetNull)
+  scenes     Scene[]
+  characters ProjectCharacter[]
 
   @@map("projects")
+}
+
+model ProjectCharacter {
+  id          String   @id @default(uuid())
+  projectId   String   @map("project_id")
+  characterId String   @map("character_id")
+  label       String?
+  orderIndex  Int      @default(0) @map("order_index")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, characterId])
+  @@map("project_characters")
 }
 
 model Scene {
@@ -102,13 +123,21 @@ model Scene {
   description        String
   voiceScript        String?  @map("voice_script")
   generationPhase    String?  @map("generation_phase")
-  imagePredictionId  String?  @map("image_prediction_id")
-  videoPredictionId  String?  @map("video_prediction_id")
-  audioPredictionId  String?  @map("audio_prediction_id")
+  imagePredictionId   String?  @map("image_prediction_id")
+  videoPredictionId   String?  @map("video_prediction_id")
+  audioPredictionId   String?  @map("audio_prediction_id")
+  lipSyncPredictionId String?  @map("lip_sync_prediction_id")
   imageUrl        String?  @map("image_url")
   audioUrl        String?  @map("audio_url")
   videoClipUrl    String?  @map("video_clip_url")
   durationSeconds Int?     @map("duration_seconds")
+  focusCharacterId String? @map("focus_character_id")
+  // Which character delivers this scene's voice_script line. Distinct from
+  // focusCharacterId: a scene can be visually focused on Kirti (she's
+  // walking toward the camera) while Kumar is the one speaking ("Kirti, will
+  // you marry me?"). Audio generation uses this to pick the right per-character
+  // voice — Kumar's lines play in Kumar's voice regardless of who's on screen.
+  speakerCharacterId String? @map("speaker_character_id")
   createdAt       DateTime @default(now()) @map("created_at")
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

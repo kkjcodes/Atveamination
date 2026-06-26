@@ -31,6 +31,10 @@ const mockFfmpegFactory = vi.fn(() => chain)
 vi.mock("fluent-ffmpeg", () => ({
   default: Object.assign(mockFfmpegFactory, {
     setFfmpegPath: vi.fn(),
+    setFfprobePath: vi.fn(),
+    ffprobe: vi.fn((_path: string, cb: (err: Error | null, data: unknown) => void) => {
+      cb(null, { format: { duration: 6 } })
+    }),
   }),
 }))
 
@@ -99,10 +103,10 @@ describe("concatenateClips", () => {
     const outputPath = join(tmpdir(), `test_silent_${Date.now()}.mp4`)
     try {
       await concatenateClips([clip("https://example.com/v.mp4")], outputPath)
-      // One merge call (video + silent audio), no concat call (single clip → copyFile)
+      // One merge call (video + silent audio WAV), no concat call (single clip → copyFile)
       expect(mockFfmpegFactory).toHaveBeenCalledTimes(1)
-      // Should use anullsrc for silent audio
-      expect(mockInput).toHaveBeenCalledWith(expect.stringContaining("anullsrc"))
+      // Should pass a silence WAV file path (not anullsrc) as second input
+      expect(mockInput).toHaveBeenCalledWith(expect.stringContaining(".silence.wav"))
     } finally {
       await fs.unlink(outputPath).catch(() => {})
     }
@@ -145,13 +149,14 @@ describe("concatenateClips", () => {
     expect(mockInputOptions).toHaveBeenCalledWith(expect.arrayContaining(["-f", "concat", "-safe", "0"]))
   })
 
-  it("uses -shortest flag to align audio length with video", async () => {
+  it("uses -t duration flag to align output length with video", async () => {
     vi.stubGlobal("fetch", makeFetchOk())
     autoResolveEnd()
 
-    const outputPath = join(tmpdir(), `test_shortest_${Date.now()}.mp4`)
+    const outputPath = join(tmpdir(), `test_duration_${Date.now()}.mp4`)
     await concatenateClips([clip("https://example.com/v.mp4")], outputPath)
-    expect(mockOutputOptions).toHaveBeenCalledWith(expect.arrayContaining(["-shortest"]))
+    // Uses -t to truncate at video duration instead of -shortest
+    expect(mockOutputOptions).toHaveBeenCalledWith(expect.arrayContaining(["-t"]))
   })
 
   it("cleans up all temp files after success", async () => {

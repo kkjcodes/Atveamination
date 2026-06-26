@@ -4,6 +4,8 @@ import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
+import { describeFirstFrame } from "@/lib/ai/describe"
+import { inferSpeakerCharacterId } from "@/lib/scene-routing"
 import { verifyReplicateSignature } from "@/lib/webhooks/verify"
 
 async function toDataUri(url: string): Promise<string> {
@@ -46,6 +48,11 @@ export async function POST(req: NextRequest) {
         where: { audioPredictionId: predictionId },
         data: { generationPhase: "failed" },
       }),
+      // Lip sync failure: graceful fallback — raw video clip is still in videoClipUrl
+      prisma.scene.updateMany({
+        where: { lipSyncPredictionId: predictionId, generationPhase: "lipsync" },
+        data: { generationPhase: "done" },
+      }),
     ])
     return NextResponse.json({ ok: true })
   }
@@ -57,21 +64,38 @@ export async function POST(req: NextRequest) {
   // double-processing when both polling and webhook arrive near-simultaneously.
   const imageScene = await prisma.scene.findFirst({
     where: { imagePredictionId: predictionId, generationPhase: "image", videoPredictionId: null },
-    include: { project: { select: { characterId: true, voiceId: true } } },
+    include: { project: { select: {
+      characterId: true,
+      voiceId: true,
+      characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } },
+    } } },
   })
 
   if (imageScene) {
     try {
       const keyframeUrl = Array.isArray(output) ? String(output[0]) : String(output)
 
-      const [character, voice] = await Promise.all([
-        imageScene.project.characterId
-          ? prisma.character.findUnique({ where: { id: imageScene.project.characterId } })
-          : null,
+      // Use focusCharacterId for visual style hints (the LoRA/Kontext target)
+      const charId = imageScene.focusCharacterId ?? imageScene.project.characterId
+      // Voice: prefer the SPEAKER character's voice (whoever is delivering the
+      // line in this scene), not the focus character. A scene can visually focus
+      // on Kirti while Kumar is the one speaking ("Kirti, will you marry me?").
+      // If speakerCharacterId wasn't set at save time (legacy scene or test
+      // script that bypassed the save endpoint), infer it from the voiceScript
+      // text — "Heather, will you..." implies Matt is speaking.
+      let voiceCharId = imageScene.speakerCharacterId ?? null
+      if (!voiceCharId) {
+        const projectChars = imageScene.project.characters.map((pc) => pc.character)
+        voiceCharId = inferSpeakerCharacterId(imageScene.voiceScript, projectChars) ?? charId
+      }
+      const [character, scriptedVoice, projectVoice] = await Promise.all([
+        charId ? prisma.character.findUnique({ where: { id: charId } }) : null,
+        voiceCharId ? prisma.voice.findFirst({ where: { characterId: voiceCharId } }) : null,
         imageScene.project.voiceId
           ? prisma.voice.findUnique({ where: { id: imageScene.project.voiceId } })
           : null,
       ])
+      const voice = scriptedVoice ?? projectVoice
 
       if (!character) {
         await prisma.scene.update({ where: { id: imageScene.id }, data: { generationPhase: "failed" } })
@@ -90,6 +114,19 @@ export async function POST(req: NextRequest) {
         mirrorUrlToBlob(keyframeUrl, `scenes/${imageScene.id}/frame.jpg`),
       ])
 
+      // Scene 0 is the visual anchor for all subsequent scenes — capture its
+      // clothing/hair/accessory cues so we can inject them into scenes 1-N.
+      // Fire-and-forget: stale by 1 scene is acceptable; user generates scenes
+      // sequentially so by the time they hit scene 1, this has resolved.
+      if (imageScene.orderIndex === 0) {
+        const projectId = imageScene.projectId
+        describeFirstFrame(imageUrl)
+          .then(async (desc) => {
+            if (desc) await prisma.project.update({ where: { id: projectId }, data: { firstFrameDescription: desc } })
+          })
+          .catch((e) => console.error("[webhook/replicate] firstFrame describe failed:", (e as Error)?.message))
+      }
+
       const base = process.env.NEXT_PUBLIC_APP_URL
       const webhookSecret = process.env.WEBHOOK_SECRET
       const falWebhookUrl = base && !base.includes("localhost") && webhookSecret
@@ -104,17 +141,34 @@ export async function POST(req: NextRequest) {
           resolution: "720p",
           aspect_ratio: "16:9",
           guide_scale: 8,
+          num_frames: 100,
         },
         ...(falWebhookUrl && { webhookUrl: falWebhookUrl }),
       })
 
+      const kokoroVoice = (voice?.ttsParams as { kokoroVoice?: string } | null)?.kokoroVoice
       let audioPred: { id: string } | null = null
-      if (voice?.sampleAudioUrl) {
+      let preGeneratedAudioUrl: string | null = null
+
+      if (kokoroVoice && ttsText) {
+        try {
+          const r = await fal.subscribe(FAL_MODELS.kokoro, { input: { text: ttsText, voice: kokoroVoice } })
+          const d = r.data as { audio?: { url: string }; audio_url?: string; audio_file?: { url: string } }
+          const rawUrl = d?.audio?.url ?? d?.audio_url ?? d?.audio_file?.url
+          if (rawUrl) {
+            preGeneratedAudioUrl = await mirrorUrlToBlob(rawUrl, `scenes/${imageScene.id}/audio.wav`).catch(() => null)
+          } else {
+            console.error("[webhook/replicate] kokoro returned no url, response shape:", Object.keys(d ?? {}))
+          }
+        } catch (e) {
+          console.error("[webhook/replicate] kokoro audio failed:", (e as Error)?.message)
+        }
+      } else if (voice?.sampleAudioUrl) {
         try {
           const speakerUri = await toDataUri(voice.sampleAudioUrl)
           audioPred = await replicate.predictions.create({
             ...predRef(MODELS.xttsV2),
-            input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: true },
+            input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: false },
             ...webhookConfig(),
           })
         } catch (e) {
@@ -130,6 +184,7 @@ export async function POST(req: NextRequest) {
           generationPhase: "video",
           videoPredictionId: falSubmit.request_id,
           audioPredictionId: audioPred?.id ?? null,
+          audioUrl: preGeneratedAudioUrl,
         },
       })
 
@@ -143,6 +198,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   }
 
+  // ── Try as lip sync prediction ────────────────────────────────────────────
+  const lipSyncScene = await prisma.scene.findFirst({
+    where: { lipSyncPredictionId: predictionId, generationPhase: "lipsync" },
+  })
+  if (lipSyncScene) {
+    try {
+      const syncedUrl = Array.isArray(output) ? String(output[0]) : String(output)
+      const videoClipUrl = await mirrorUrlToBlob(syncedUrl, `scenes/${lipSyncScene.id}/clip_synced.mp4`)
+      await prisma.scene.update({
+        where: { id: lipSyncScene.id },
+        data: { videoClipUrl, generationPhase: "done" },
+      })
+    } catch (e) {
+      console.error("[webhook/replicate] lipsync handler error:", (e as Error)?.message)
+      // Graceful fallback: raw clip is still in videoClipUrl
+      await prisma.scene.update({ where: { id: lipSyncScene.id }, data: { generationPhase: "done" } })
+    }
+    return NextResponse.json({ ok: true })
+  }
+
   // ── Try as audio prediction ───────────────────────────────────────────────
   const audioScene = await prisma.scene.findFirst({
     where: { audioPredictionId: predictionId },
@@ -152,15 +227,37 @@ export async function POST(req: NextRequest) {
     try {
       const rawAudioUrl = Array.isArray(output) ? String(output[0]) : String(output)
       const audioUrl = await mirrorUrlToBlob(rawAudioUrl, `scenes/${audioScene.id}/audio.wav`)
+      await prisma.scene.update({ where: { id: audioScene.id }, data: { audioUrl } })
+      const fresh = await prisma.scene.findUnique({ where: { id: audioScene.id } })
 
-      // Atomic: set audioUrl, then transition to done if video is already mirrored
-      await prisma.$transaction(async (tx) => {
-        await tx.scene.update({ where: { id: audioScene.id }, data: { audioUrl } })
-        const fresh = await tx.scene.findUnique({ where: { id: audioScene.id } })
-        if (fresh?.videoClipUrl) {
-          await tx.scene.update({ where: { id: audioScene.id }, data: { generationPhase: "done" } })
+      if (fresh?.videoClipUrl) {
+        // Skip LatentSync entirely on shared (multi-character) scenes — it
+        // syncs one face to the audio, leaving the other character's lips
+        // animating silently from WAN motion. See fal webhook for full rationale.
+        if (fresh.focusCharacterId === null) {
+          await prisma.scene.update({ where: { id: audioScene.id }, data: { generationPhase: "done" } })
+        } else {
+          // Video already arrived — race to claim lip sync submission
+          const claimed = await prisma.scene.updateMany({
+            where: { id: audioScene.id, lipSyncPredictionId: null, generationPhase: "video" },
+            data: { generationPhase: "lipsync" },
+          })
+          if (claimed.count > 0) {
+            try {
+              const pred = await replicate.predictions.create({
+                ...predRef(MODELS.latentSync),
+                input: { video: fresh.videoClipUrl, audio: audioUrl },
+                ...webhookConfig(),
+              })
+              await prisma.scene.update({ where: { id: audioScene.id }, data: { lipSyncPredictionId: pred.id } })
+            } catch (lipSyncErr) {
+              console.error("[webhook/replicate] lipsync submit failed, falling back to raw clip:", (lipSyncErr as Error)?.message)
+              await prisma.scene.update({ where: { id: audioScene.id }, data: { generationPhase: "done" } })
+            }
+          }
         }
-      })
+      }
+      // else: video still pending — fal webhook will submit lip sync when video arrives
     } catch (e) {
       console.error("[webhook/replicate] audio handler error:", (e as Error)?.message)
     }

@@ -14,20 +14,33 @@ export async function POST(req: NextRequest) {
   const characterId = form.get("character_id") as string | null
   const ttsParamsRaw = form.get("tts_params") as string | null
 
-  if (!audio || !characterId) {
-    return NextResponse.json({ error: "audio and character_id are required" }, { status: 400 })
+  if (!characterId) {
+    return NextResponse.json({ error: "character_id is required" }, { status: 400 })
   }
 
-  const blobPath = `${userId}/voices/${Date.now()}.webm`
-  const buffer = Buffer.from(await audio.arrayBuffer())
-  const url = await uploadBlob(blobPath, buffer, "audio/webm")
+  const ownedChar = await prisma.character.findFirst({ where: { id: characterId, userId }, select: { id: true } })
+  if (!ownedChar) return NextResponse.json({ error: "Character not found" }, { status: 404 })
+
+  const ttsParams = JSON.parse(ttsParamsRaw ?? "{}")
+
+  // Preset voice: no recording needed — kokoroVoice in ttsParams identifies the voice
+  if (!audio && !ttsParams.kokoroVoice) {
+    return NextResponse.json({ error: "audio or a preset voice selection is required" }, { status: 400 })
+  }
+
+  let sampleAudioUrl: string | null = null
+  if (audio) {
+    const blobPath = `${userId}/voices/${Date.now()}.webm`
+    const buffer = Buffer.from(await audio.arrayBuffer())
+    sampleAudioUrl = await uploadBlob(blobPath, buffer, "audio/webm")
+  }
 
   const voice = await prisma.voice.create({
     data: {
       userId,
       characterId,
-      sampleAudioUrl: url,
-      ttsParams: JSON.parse(ttsParamsRaw ?? "{}"),
+      sampleAudioUrl,
+      ttsParams,
     },
   })
 

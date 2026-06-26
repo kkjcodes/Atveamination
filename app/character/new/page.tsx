@@ -9,22 +9,28 @@ import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { CharacterOption, JobStatus } from "@/types"
+import { PRESET_VOICES } from "@/lib/fal/client"
 
-const STYLES = ["pixar", "anime", "comic", "sketch"] as const
+const STYLES = ["pixar", "anime", "ghibli", "chibi", "comic", "sketch", "watercolor", "claymation"] as const
 const STYLE_LABELS: Record<string, string> = {
-  pixar: "Pixar 3D",
-  anime: "Anime",
-  comic: "Comic Book",
-  sketch: "Pencil Sketch",
+  pixar:      "Pixar 3D",
+  anime:      "Anime",
+  ghibli:     "Studio Ghibli",
+  chibi:      "Chibi / Kawaii",
+  comic:      "Comic Book",
+  sketch:     "Pencil Sketch",
+  watercolor: "Watercolor",
+  claymation: "Claymation",
 }
 
-type Step = 1 | 2 | 3
+type Step = 1 | 2 | 3 | 4
 
 function StepIndicator({ current }: { current: Step }) {
   const steps = [
     { n: 1, label: "Upload Your Photo" },
     { n: 2, label: "Choose Your Style" },
-    { n: 3, label: "Training Your Character" },
+    { n: 3, label: "Train Character" },
+    { n: 4, label: "Pick a Voice" },
   ]
   return (
     <div className="flex items-center gap-0 mb-10">
@@ -50,7 +56,7 @@ function StepIndicator({ current }: { current: Step }) {
           </div>
           {i < steps.length - 1 && (
             <div
-              className={`h-px w-16 mx-2 mb-5 transition-colors ${
+              className={`h-px w-10 mx-2 mb-5 transition-colors ${
                 current > s.n ? "bg-violet-400" : "bg-zinc-200"
               }`}
             />
@@ -73,6 +79,8 @@ export default function NewCharacterPage() {
   const [characterId, setCharacterId] = useState<string | null>(null)
   const [styleOptions, setStyleOptions] = useState<CharacterOption[]>([])
   const [loadingStyles, setLoadingStyles] = useState(false)
+  const [loadingMoreStyles, setLoadingMoreStyles] = useState(false)
+  const [batch2Loaded, setBatch2Loaded] = useState(false)
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null)
   const [trainingJobId, setTrainingJobId] = useState<string | null>(null)
   const [trainingStatus, setTrainingStatus] = useState<JobStatus>("pending")
@@ -80,6 +88,12 @@ export default function NewCharacterPage() {
   const [trainingPhase, setTrainingPhase] = useState<"augmenting" | "training">("training")
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // Step 4: voice selection
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null)
+  const [voiceGender, setVoiceGender] = useState<"all" | "male" | "female">("all")
+  const [voiceAccent, setVoiceAccent] = useState<"all" | "american" | "british">("all")
+  const [savingVoice, setSavingVoice] = useState(false)
 
   const onFileDrop = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
@@ -207,7 +221,7 @@ export default function NewCharacterPage() {
 
         if (status === "succeeded") {
           setTrainingProgress(100)
-          setTimeout(() => router.push(`/character/${characterId}`), 1200)
+          setTimeout(() => setStep(4), 1200)
         }
       } catch {
         // network blip — keep polling
@@ -218,6 +232,43 @@ export default function NewCharacterPage() {
     poll()
     return () => clearInterval(interval)
   }, [step, trainingJobId, trainingStatus, characterId, router])
+
+  async function loadMoreStyles() {
+    if (!characterId || batch2Loaded || loadingMoreStyles) return
+    setLoadingMoreStyles(true)
+    try {
+      const res = await fetch(`/api/characters/${characterId}/generate-styles?batch=2`, { method: "POST" })
+      const data = await res.json()
+      if (res.ok) {
+        setStyleOptions((prev) => [...prev, ...data.options])
+        setBatch2Loaded(true)
+      }
+    } catch {
+      // non-fatal — user can still pick from batch 1
+    } finally {
+      setLoadingMoreStyles(false)
+    }
+  }
+
+  async function saveVoiceAndContinue() {
+    if (!characterId || !selectedVoice) return
+    setSavingVoice(true)
+    try {
+      const form = new FormData()
+      form.append("character_id", characterId)
+      form.append("tts_params", JSON.stringify({ kokoroVoice: selectedVoice }))
+      await fetch("/api/voice", { method: "POST", body: form })
+    } catch {
+      // non-fatal — user can set voice later
+    }
+    router.push(`/character/${characterId}`)
+  }
+
+  const filteredVoices = PRESET_VOICES.filter((v) => {
+    if (voiceGender !== "all" && v.gender !== voiceGender) return false
+    if (voiceAccent !== "all" && v.accent !== voiceAccent) return false
+    return true
+  })
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -362,7 +413,9 @@ export default function NewCharacterPage() {
                 : "Pick the style you like best, then we'll train your character."}
             </p>
             <div className="grid grid-cols-2 gap-4 mb-6">
-              {STYLES.map((styleName) => {
+              {(["pixar", "anime", "ghibli", "chibi",
+                 ...(loadingMoreStyles || batch2Loaded ? ["comic", "sketch", "watercolor", "claymation"] : [])] as const
+              ).map((styleName) => {
                 const option = styleOptions.find((o) => o.style_name === styleName)
                 const isSelected = option && selectedOptionId === option.id
                 return (
@@ -403,6 +456,19 @@ export default function NewCharacterPage() {
                 )
               })}
             </div>
+
+            {!loadingStyles && !batch2Loaded && (
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  disabled={loadingMoreStyles}
+                  onClick={loadMoreStyles}
+                  className="text-sm text-violet-600 hover:text-violet-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loadingMoreStyles ? "Generating 4 more styles…" : "Try 4 more styles →"}
+                </button>
+              </div>
+            )}
 
             <div className="flex justify-end">
               <Button
@@ -491,6 +557,83 @@ export default function NewCharacterPage() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-semibold text-zinc-900">Pick a Voice</h2>
+              <p className="text-sm text-zinc-500 mt-1">
+                This voice will narrate every scene. You can record your own voice later from the character page.
+              </p>
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap gap-3">
+              <div className="flex rounded-lg border border-zinc-200 overflow-hidden text-sm">
+                {(["all", "female", "male"] as const).map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setVoiceGender(g)}
+                    className={`px-3 py-1.5 transition-colors ${voiceGender === g ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
+                  >
+                    {g === "all" ? "Any gender" : g === "female" ? "Female" : "Male"}
+                  </button>
+                ))}
+              </div>
+              <div className="flex rounded-lg border border-zinc-200 overflow-hidden text-sm">
+                {(["all", "american", "british"] as const).map((a) => (
+                  <button
+                    key={a}
+                    type="button"
+                    onClick={() => setVoiceAccent(a)}
+                    className={`px-3 py-1.5 transition-colors ${voiceAccent === a ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
+                  >
+                    {a === "all" ? "Any accent" : a === "american" ? "American" : "British"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Voice grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {filteredVoices.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => setSelectedVoice(v.id)}
+                  className={`text-left rounded-xl border-2 px-4 py-3 transition-colors ${
+                    selectedVoice === v.id
+                      ? "border-violet-500 bg-violet-50"
+                      : "border-zinc-200 hover:border-zinc-300 bg-white"
+                  }`}
+                >
+                  <p className="font-semibold text-zinc-900 text-sm">{v.label}</p>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    {v.description} · {v.gender === "female" ? "Female" : "Male"} · {v.accent === "american" ? "American" : "British"}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-2">
+              <button
+                type="button"
+                onClick={() => router.push(`/character/${characterId}`)}
+                className="text-sm text-zinc-400 hover:text-zinc-600"
+              >
+                Skip for now
+              </button>
+              <Button
+                size="lg"
+                disabled={!selectedVoice || savingVoice}
+                onClick={saveVoiceAndContinue}
+              >
+                {savingVoice ? "Saving…" : selectedVoice ? `Use ${PRESET_VOICES.find((v) => v.id === selectedVoice)?.label}` : "Select a voice"}
+              </Button>
+            </div>
+          </div>
         )}
       </div>
       </div>

@@ -2,46 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
-import { replicate, characterTriggerWord } from "@/lib/replicate/client"
+import { fal, FAL_MODELS } from "@/lib/fal/client"
+import { characterTriggerWord } from "@/lib/replicate/client"
 import { checkTrainingLimit } from "@/lib/limits"
-import { zipSync } from "fflate"
-
-async function getReplicateUsername(): Promise<string> {
-  const res = await fetch("https://api.replicate.com/v1/account", {
-    headers: { Authorization: `Bearer ${process.env.REPLICATE_API_TOKEN}` },
-  })
-  if (!res.ok) throw new Error("Could not fetch Replicate account")
-  const data = (await res.json()) as { username: string }
-  return data.username
-}
-
-async function ensureDestinationModel(owner: string, name: string) {
-  try {
-    await replicate.models.get(owner, name)
-  } catch {
-    await replicate.models.create(owner, name, {
-      visibility: "private",
-      hardware: "gpu-a100-large",
-    })
-  }
-}
-
-async function buildAndUploadTrainingZip(imageUrls: string[]): Promise<string> {
-  const entries: Record<string, Uint8Array> = {}
-  await Promise.all(
-    imageUrls.map(async (url, i) => {
-      const res = await fetch(url)
-      if (!res.ok) throw new Error(`Could not download training image ${i}`)
-      const ext = url.includes(".webp") ? "webp" : url.includes(".jpg") || url.includes(".jpeg") ? "jpg" : "png"
-      entries[`training_${String(i).padStart(2, "0")}.${ext}`] = new Uint8Array(await res.arrayBuffer())
-    })
-  )
-  const zip = zipSync(entries)
-  const file = await replicate.files.create(new Blob([zip], { type: "application/zip" }), {
-    filename: "training.zip",
-  })
-  return file.urls.get
-}
+import { logError } from "@/lib/logger"
+import { buildAndUploadZip } from "@/lib/training/retrain"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -54,85 +19,58 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     checkTrainingLimit(userId, session.user.role),
   ])
 
-  if (!character) {
-    return NextResponse.json({ error: "Character not found" }, { status: 404 })
-  }
-
+  if (!character) return NextResponse.json({ error: "Character not found" }, { status: 404 })
   if (!trainingLimit.allowed) {
     return NextResponse.json(
       { error: "Training limit reached.", used: trainingLimit.used, limit: trainingLimit.limit, resetsAt: trainingLimit.resetsAt },
       { status: 429 }
     )
   }
-
   if (!character.selectedStyleUrl) {
     return NextResponse.json({ error: "Select a style before training" }, { status: 400 })
   }
 
-  let trainerModel, replicateUsername: string
-  try {
-    ;[trainerModel, replicateUsername] = await Promise.all([
-      replicate.models.get("ostris", "flux-dev-lora-trainer"),
-      getReplicateUsername(),
-    ])
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[train] setup failed:", msg)
-    return NextResponse.json({ error: msg }, { status: 502 })
-  }
-
-  const versionId = trainerModel.latest_version?.id
-  if (!versionId) {
-    return NextResponse.json({ error: "Could not resolve trainer model version" }, { status: 502 })
-  }
-
-  // Use augmented images (20+) if available, otherwise fall back to the single selected style
-  const augmentedUrls = Array.isArray(character.trainingImages)
-    ? (character.trainingImages as string[])
-    : []
+  const augmentedUrls = Array.isArray(character.trainingImages) ? (character.trainingImages as string[]) : []
+  // Source photo 5x to anchor skin tone (see retrain.ts for rationale)
+  const sourceCopies = Array(5).fill(character.sourcePhotoUrl)
   const trainingUrls = augmentedUrls.length >= 10
-    ? augmentedUrls
+    ? [...sourceCopies, ...augmentedUrls]
     : [character.selectedStyleUrl]
   const steps = augmentedUrls.length >= 10 ? 1500 : 800
 
   let zipUrl: string
-  const modelName = `atve-char-${id.slice(0, 8)}`
   try {
-    ;[, zipUrl] = await Promise.all([
-      ensureDestinationModel(replicateUsername, modelName),
-      buildAndUploadTrainingZip(trainingUrls),
-    ])
+    zipUrl = await buildAndUploadZip(id, trainingUrls)
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e)
-    console.error("[train] model/zip setup failed:", msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
+    logError("/api/characters/[id]/train", "build_zip", { characterId: id, userId }, e)
+    return NextResponse.json({ error: "Failed to prepare training data. Please try again." }, { status: 500 })
   }
 
-  const training = await replicate.trainings.create(
-    "ostris",
-    "flux-dev-lora-trainer",
-    versionId,
-    {
-      destination: `${replicateUsername}/${modelName}` as `${string}/${string}`,
+  let requestId: string
+  try {
+    const submission = await fal.queue.submit(FAL_MODELS.loraTraining, {
       input: {
-        input_images: zipUrl,
+        images_data_url: zipUrl,
         trigger_word: characterTriggerWord(id),
         steps,
       },
-    }
-  )
+    })
+    requestId = submission.request_id
+  } catch (e) {
+    logError("/api/characters/[id]/train", "fal_submit", { characterId: id, userId, steps }, e)
+    return NextResponse.json({ error: "Failed to start training. Please try again." }, { status: 502 })
+  }
 
-  // Store the runnable model path immediately so we know it when training completes
   await prisma.character.update({
     where: { id },
-    data: { loraVersion: `${replicateUsername}/${modelName}`, loraTrainingStatus: "processing" },
+    data: { loraTrainingStatus: "processing", loraVersion: null },
   })
 
   const job = await prisma.job.create({
     data: {
       userId,
-      type: "lora_training",
-      replicatePredictionId: training.id,
+      type: "lora_training_fal",
+      replicatePredictionId: requestId,
       entityId: id,
       entityType: "character",
       status: "processing",

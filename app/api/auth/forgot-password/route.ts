@@ -2,10 +2,18 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/client"
 import { randomBytes } from "crypto"
 import { sendEmail, passwordResetEmail } from "@/lib/email/client"
+import { rateLimit } from "@/lib/rate-limit"
 
 const TOKEN_TTL_MS = 60 * 60 * 1000 // 1 hour
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown"
+  const rl = rateLimit(`forgot:${ip}`, 3, 60 * 60 * 1000)
+  if (!rl.allowed) {
+    // Return ok to keep user-enumeration protection intact
+    return NextResponse.json({ ok: true })
+  }
+
   const { email } = await req.json() as { email?: string }
   if (!email) return NextResponse.json({ error: "Email required" }, { status: 400 })
 

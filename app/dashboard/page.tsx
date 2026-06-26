@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Nav from "@/components/nav"
 import DeleteButton from "@/components/delete-button"
+import ShareButtons from "@/components/share-buttons"
 
 type TrainingStatus = "pending" | "processing" | "succeeded" | "failed" | "canceled"
 
@@ -38,6 +39,7 @@ export default async function DashboardPage() {
     prisma.character.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
+      include: { voices: { orderBy: { createdAt: "desc" }, take: 1 } },
     }),
     prisma.project.findMany({
       where: { userId },
@@ -83,6 +85,24 @@ export default async function DashboardPage() {
             </Button>
           </div>
 
+          {/* Group video CTA — show when 2+ characters have a style ready */}
+          {(() => {
+            const readyChars = characters.filter((c) => c.selectedStyleUrl)
+            if (readyChars.length < 2) return null
+            const ids = readyChars.slice(0, 4).map((c) => c.id).join(",")
+            return (
+              <div className="mb-5 flex items-center justify-between bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl px-5 py-4">
+                <div>
+                  <p className="font-semibold text-orange-900 text-sm">You have {readyChars.length} characters ready</p>
+                  <p className="text-xs text-orange-700 mt-0.5">Put them all in one video — families, couples, friends</p>
+                </div>
+                <Button asChild size="sm" className="bg-orange-500 hover:bg-orange-600 text-white border-0 shrink-0 ml-4">
+                  <Link href={`/studio/new?characters=${ids}`}>Make Group Video</Link>
+                </Button>
+              </div>
+            )
+          })()}
+
           {characters.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center py-16 text-center">
@@ -110,39 +130,63 @@ export default async function DashboardPage() {
                 </Card>
               </Link>
 
-              {characters.map((char) => (
-                <div key={char.id} className="relative group">
-                  <Link href={`/character/${char.id}`}>
-                    <Card className="cursor-pointer overflow-hidden transition-shadow hover:shadow-md h-full">
-                      <div className="aspect-square w-full overflow-hidden bg-zinc-100">
-                        {char.selectedStyleUrl ?? char.sourcePhotoUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={char.selectedStyleUrl ?? char.sourcePhotoUrl!}
-                            alt={char.name}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full items-center justify-center text-4xl text-zinc-300">👤</div>
-                        )}
-                      </div>
-                      <CardContent className="p-4">
+              {characters.map((char) => {
+                const voiceId = char.voices[0]?.id
+                const studioUrl = `/studio/new?character=${char.id}${voiceId ? `&voice=${voiceId}` : ""}`
+                const canMakeVideo = !!char.selectedStyleUrl
+                return (
+                  <div key={char.id} className="relative group">
+                    <Card className="overflow-hidden transition-shadow hover:shadow-md h-full flex flex-col">
+                      {/* Image — click to manage character */}
+                      <Link href={`/character/${char.id}`} className="block shrink-0">
+                        <div className="aspect-square w-full overflow-hidden bg-zinc-100">
+                          {char.selectedStyleUrl ?? char.sourcePhotoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={char.selectedStyleUrl ?? char.sourcePhotoUrl!}
+                              alt={char.name}
+                              className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                            />
+                          ) : (
+                            <div className="flex h-full items-center justify-center text-4xl text-zinc-300">👤</div>
+                          )}
+                        </div>
+                      </Link>
+                      <CardContent className="p-4 flex flex-col gap-3 flex-1">
                         <div className="flex items-start justify-between gap-2">
                           <p className="font-medium text-zinc-900 truncate">{char.name}</p>
                           {statusBadge(char.loraTrainingStatus)}
                         </div>
+                        <div className="flex gap-2 mt-auto">
+                          <Button
+                            asChild={canMakeVideo}
+                            size="sm"
+                            className="flex-1"
+                            disabled={!canMakeVideo}
+                            title={!canMakeVideo ? "Select a style for this character first" : undefined}
+                          >
+                            {canMakeVideo ? (
+                              <Link href={studioUrl}>Make Video</Link>
+                            ) : (
+                              <span>Make Video</span>
+                            )}
+                          </Button>
+                          <Button asChild size="sm" variant="ghost" className="text-zinc-500 shrink-0">
+                            <Link href={`/character/${char.id}`}>Manage</Link>
+                          </Button>
+                        </div>
                       </CardContent>
                     </Card>
-                  </Link>
-                  {/* Delete button — always visible on touch, hover-reveal on desktop */}
-                  <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <DeleteButton
-                      url={`/api/characters/${char.id}`}
-                      className="bg-white/90 border border-zinc-200 shadow-sm text-zinc-500 hover:text-red-500 hover:bg-red-50 text-xs px-2 py-1 h-auto rounded-md"
-                    />
+                    {/* Delete button — always visible on touch, hover-reveal on desktop */}
+                    <div className="absolute top-2 right-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                      <DeleteButton
+                        url={`/api/characters/${char.id}`}
+                        className="bg-white/90 border border-zinc-200 shadow-sm text-zinc-500 hover:text-red-500 hover:bg-red-50 text-xs px-2 py-1 h-auto rounded-md"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </section>
@@ -183,17 +227,22 @@ export default async function DashboardPage() {
                       {proj.scenes.length} {proj.scenes.length === 1 ? "scene" : "scenes"}
                     </p>
                   </CardHeader>
-                  <CardContent className="flex gap-2 pt-0">
-                    {proj.status === "succeeded" && proj.finalVideoUrl ? (
-                      <Button asChild size="sm" variant="outline" className="flex-1">
-                        <a href={proj.finalVideoUrl} download>Download</a>
-                      </Button>
-                    ) : (
-                      <Button asChild size="sm" className="flex-1">
-                        <Link href={`/studio/${proj.id}`}>Continue</Link>
-                      </Button>
+                  <CardContent className="flex flex-col gap-2 pt-0">
+                    <div className="flex gap-2">
+                      {proj.status === "succeeded" && proj.finalVideoUrl ? (
+                        <Button asChild size="sm" variant="outline" className="flex-1">
+                          <a href={proj.finalVideoUrl} download>Download</a>
+                        </Button>
+                      ) : (
+                        <Button asChild size="sm" className="flex-1">
+                          <Link href={`/studio/${proj.id}`}>Continue</Link>
+                        </Button>
+                      )}
+                      <DeleteButton url={`/api/projects/${proj.id}`} />
+                    </div>
+                    {proj.status === "succeeded" && proj.finalVideoUrl && (
+                      <ShareButtons url={proj.finalVideoUrl} size="sm" />
                     )}
-                    <DeleteButton url={`/api/projects/${proj.id}`} />
                   </CardContent>
                 </Card>
               ))}

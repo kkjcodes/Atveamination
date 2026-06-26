@@ -8,6 +8,10 @@ type GeneratedScene = {
   description: string
   voice_script: string
   duration_seconds: 5 | 10 | 15
+  // Which character actually delivers the voice_script line. Used downstream to
+  // pick the right per-character voice (Kumar's lines play in Kumar's voice).
+  // Optional — for single-character projects we infer from the cast.
+  speaker?: string
 }
 
 export async function POST(req: NextRequest) {
@@ -23,11 +27,17 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { brief, style, num_scenes } = await req.json()
+  const { brief, style, num_scenes, character_names } = await req.json()
   if (!brief?.trim()) return NextResponse.json({ error: "brief is required" }, { status: 400 })
 
   const numScenes = Math.max(1, Math.min(10, Number(num_scenes) || 5))
   const styleLabel = style ?? "cartoon animation"
+  const names: string[] = Array.isArray(character_names) ? character_names : []
+  const castLine = names.length > 1
+    ? `Cast: ${names.join(", ")}. Scenes should feature these characters — some scenes focus on one character, others show them together.`
+    : names.length === 1
+      ? `Main character: ${names[0]}.`
+      : ""
 
   const message = await anthropic.messages.create({
     model: BRIEF_MODEL,
@@ -38,16 +48,18 @@ export async function POST(req: NextRequest) {
         content: `You are a creative director for an animated ${styleLabel} short video.
 
 Expand this brief into exactly ${numScenes} scenes for an AI video generator.
+${castLine}
 
 BRIEF: "${brief.trim()}"
 
 For each scene write:
-- description (2-3 sentences): vivid, specific visual details — the character's pose and action, the setting, lighting, mood. Be concrete and visual, not abstract.
+- description (2-3 sentences): vivid, specific visual details — the character's pose and action, the setting, lighting, mood. Be concrete and visual, not abstract. When multiple characters are present, name them in the description.
 - voice_script (1-2 short sentences): what the character says or narrates, natural and conversational tone.
+- speaker: ${names.length > 1 ? `which character delivers the voice_script line — must be one of: ${names.join(", ")}. Choose the character whose dialogue this is. For narration with no clear speaker, choose the most prominent character in the scene.` : `omit this field, single-character project.`}
 - duration_seconds: 5 (quick moment), 10 (standard action), or 15 (longer sequence with more happening).
 
 Return ONLY a valid JSON array, no markdown fences or extra text:
-[{"description":"...","voice_script":"...","duration_seconds":5}]`,
+[{"description":"...","voice_script":"...","speaker":"...","duration_seconds":5}]`,
       },
     ],
   })

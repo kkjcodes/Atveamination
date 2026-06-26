@@ -58,8 +58,9 @@ async function createSilentWav(durationSec: number, outputPath: string): Promise
 // Speeding audio up via atempo degrades clarity significantly at >1.5x; trimming
 // is always preferred because the narration was recorded at natural pace.
 function audioTrimFilter(videoDur: number): string {
-  const fadeStart = Math.max(0, videoDur - 0.4)
-  return `atrim=0:${videoDur.toFixed(3)},afade=type=out:start_time=${fadeStart.toFixed(3)}:duration=0.4`
+  const fadeDur = Math.min(1.5, videoDur * 0.25)
+  const fadeStart = Math.max(0, videoDur - fadeDur)
+  return `atrim=0:${videoDur.toFixed(3)},afade=type=out:start_time=${fadeStart.toFixed(3)}:duration=${fadeDur.toFixed(3)}`
 }
 
 async function mergeVideoAudio(
@@ -68,7 +69,6 @@ async function mergeVideoAudio(
   outputPath: string
 ): Promise<void> {
   let silencePath: string | null = null
-  // Probe video duration first — it drives the output length
   const videoDur = await probeDuration(videoPath)
 
   let resolvedAudio: string
@@ -80,28 +80,39 @@ async function mergeVideoAudio(
     resolvedAudio = silencePath
   }
 
+  // Output duration: match the shorter side, with a small buffer.
+  //   - Audio shorter than video → trim video to (audioDur + 0.5s buffer).
+  //     Otherwise Kokoro lines like "Yes!" produce 2-4s of dead silence at
+  //     the tail of a 6s WAN clip, which the user reads as "missing audio"
+  //     (most noticeable on the final scene where nothing follows).
+  //   - Audio longer than video → trim audio to video length with fade-out.
+  //   - Otherwise use video duration as-is.
+  let outputDur = videoDur
   let audioFilterStr: string | null = null
   if (audioPath) {
     const audioDur = await probeDuration(resolvedAudio)
     if (videoDur > 0 && audioDur > videoDur * 1.05) {
-      // Trim audio to video length with a short fade-out.
-      // Never speed up — even 1.5x atempo noticeably degrades voice clarity.
       audioFilterStr = audioTrimFilter(videoDur)
+    } else if (audioDur > 0 && audioDur + 0.5 < videoDur) {
+      // Cap at audio length + small visual outro, never below the audio itself
+      outputDur = Math.min(videoDur, audioDur + 0.5)
     }
   }
+
+  // When we trim mid-frame the input must be re-encoded; stream-copy can only
+  // cut on keyframes. Re-encoding 6s clips is cheap compared to the user-visible
+  // silence we'd otherwise leave in.
+  const trimmedToAudio = outputDur < videoDur
+  const videoCodec = trimmedToAudio ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"] : ["-c:v", "copy"]
 
   try {
     await new Promise<void>((resolve, reject) => {
       const opts = [
         "-map", "0:v:0",
         "-map", "1:a:0",
-        // Stream-copy video: WAN I2V already outputs h264, re-encoding wastes CPU
-        // and is the main cause of stitch timeouts on multi-scene projects.
-        "-c:v", "copy",
+        ...videoCodec,
         "-c:a", "aac", "-b:a", "128k", "-ac", "2",
-        // Drive output length by video duration, not the shorter stream.
-        // Audio naturally falls silent after it ends; video plays to completion.
-        "-t", videoDur.toFixed(3),
+        "-t", outputDur.toFixed(3),
         "-movflags", "+faststart",
       ]
       if (audioFilterStr) opts.push("-af", audioFilterStr)

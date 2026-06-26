@@ -9,6 +9,9 @@ type GeneratedScene = {
   description: string
   voiceScript: string
   durationSeconds: 5 | 10 | 15
+  // The character name (one of `characterNames`) who delivers this scene's
+  // voice line. Used downstream to pick the right per-character voice.
+  speakerName?: string
 }
 
 type Props = {
@@ -16,11 +19,12 @@ type Props = {
   onClose: () => void
   onApply: (scenes: GeneratedScene[]) => void
   characterStyle?: string
+  characterNames?: string[]
 }
 
 const SCENE_COUNT_OPTIONS = [2, 3, 4, 5, 6, 8]
 
-export default function BriefModal({ open, onClose, onApply, characterStyle }: Props) {
+export default function BriefModal({ open, onClose, onApply, characterStyle, characterNames }: Props) {
   const [brief, setBrief] = useState("")
   const [numScenes, setNumScenes] = useState(4)
   const [loading, setLoading] = useState(false)
@@ -43,6 +47,7 @@ export default function BriefModal({ open, onClose, onApply, characterStyle }: P
           brief,
           style: characterStyle,
           num_scenes: numScenes,
+          character_names: characterNames ?? [],
         }),
       })
       const data = await res.json()
@@ -62,6 +67,7 @@ export default function BriefModal({ open, onClose, onApply, characterStyle }: P
         description: String(s.description ?? ""),
         voiceScript: String(s.voice_script ?? ""),
         durationSeconds: ([5, 10, 15] as const).includes(s.duration_seconds) ? s.duration_seconds : 5,
+        speakerName: typeof s.speaker === "string" ? s.speaker : undefined,
       }))
       setGenerated(scenes)
     } catch (e) {

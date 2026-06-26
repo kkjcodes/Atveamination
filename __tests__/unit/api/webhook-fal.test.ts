@@ -4,21 +4,37 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 const mockUpdateMany = vi.fn()
 const mockFindFirst = vi.fn()
-const mockTransaction = vi.fn()
+const mockSceneUpdate = vi.fn()
+const mockSceneFindUnique = vi.fn()
 
 vi.mock("@/lib/db/client", () => ({
   prisma: {
     scene: {
       updateMany: mockUpdateMany,
       findFirst: mockFindFirst,
+      update: mockSceneUpdate,
+      findUnique: mockSceneFindUnique,
     },
-    $transaction: mockTransaction,
   },
 }))
 
 const mockMirrorUrlToBlob = vi.fn()
 vi.mock("@/lib/storage/client", () => ({
   mirrorUrlToBlob: mockMirrorUrlToBlob,
+}))
+
+const mockReplicatePredCreate = vi.fn()
+vi.mock("@/lib/replicate/client", () => ({
+  replicate: {
+    predictions: { create: mockReplicatePredCreate },
+  },
+  MODELS: {
+    latentSync: "bytedance/latentsync",
+  },
+}))
+
+vi.mock("@/lib/webhooks/verify", () => ({
+  verifyFalSecret: vi.fn().mockReturnValue(true),
 }))
 
 // next/server stubs — keep NextResponse shape minimal but usable
@@ -50,27 +66,15 @@ function makeScene(overrides: Record<string, unknown> = {}) {
   }
 }
 
-/**
- * Wire mockTransaction so it invokes the callback with a tx that wraps
- * the provided freshScene state.
- */
-function setupTransaction(freshScene: Record<string, unknown> | null) {
-  mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-    const txScene = {
-      update: vi.fn().mockResolvedValue({}),
-      findUnique: vi.fn().mockResolvedValue(freshScene),
-    }
-    return fn({ scene: txScene })
-  })
-}
-
 beforeEach(() => {
   vi.clearAllMocks()
 
   mockUpdateMany.mockResolvedValue({ count: 1 })
   mockFindFirst.mockResolvedValue(null)
+  mockSceneUpdate.mockResolvedValue({})
+  mockSceneFindUnique.mockResolvedValue(null)
   mockMirrorUrlToBlob.mockResolvedValue("https://blob.example.com/scenes/scene-1/clip.mp4")
-  setupTransaction(makeScene({ videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" }))
+  mockReplicatePredCreate.mockResolvedValue({ id: "lipsync-pred-1" })
 })
 
 afterEach(() => {
@@ -86,16 +90,7 @@ describe("POST /api/webhooks/fal", () => {
     const scene = makeScene({ audioPredictionId: null, audioUrl: null })
     mockFindFirst.mockResolvedValue(scene)
     const freshScene = { ...scene, videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" }
-    setupTransaction(freshScene)
-
-    let txSceneRef: { update: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> } | null = null
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      txSceneRef = {
-        update: vi.fn().mockResolvedValue({}),
-        findUnique: vi.fn().mockResolvedValue(freshScene),
-      }
-      return fn({ scene: txSceneRef })
-    })
+    mockSceneFindUnique.mockResolvedValue(freshScene)
 
     await POST(makeReq({
       request_id: "req-123",
@@ -103,10 +98,12 @@ describe("POST /api/webhooks/fal", () => {
       payload: { video: { url: "https://fal.ai/video.mp4" } },
     }) as never)
 
-    // transaction ran
-    expect(mockTransaction).toHaveBeenCalledOnce()
-    // phase=done was set
-    expect(txSceneRef!.update).toHaveBeenCalledWith(
+    // video URL stored
+    expect(mockSceneUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" } })
+    )
+    // phase=done set (no audio needed)
+    expect(mockSceneUpdate).toHaveBeenCalledWith(
       expect.objectContaining({ data: { generationPhase: "done" } })
     )
   })
@@ -114,19 +111,8 @@ describe("POST /api/webhooks/fal", () => {
   it("video complete, audio pending → sets videoClipUrl but NOT phase=done", async () => {
     const scene = makeScene({ audioPredictionId: "aud-pred", audioUrl: null })
     mockFindFirst.mockResolvedValue(scene)
-    const freshScene = {
-      ...scene,
-      videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4",
-    }
-
-    let txSceneRef: { update: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> } | null = null
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      txSceneRef = {
-        update: vi.fn().mockResolvedValue({}),
-        findUnique: vi.fn().mockResolvedValue(freshScene),
-      }
-      return fn({ scene: txSceneRef })
-    })
+    const freshScene = { ...scene, videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" }
+    mockSceneFindUnique.mockResolvedValue(freshScene)
 
     await POST(makeReq({
       request_id: "req-123",
@@ -134,30 +120,23 @@ describe("POST /api/webhooks/fal", () => {
       payload: { video: { url: "https://fal.ai/video.mp4" } },
     }) as never)
 
-    expect(mockTransaction).toHaveBeenCalledOnce()
-    // The only update call should be for videoClipUrl, not generationPhase=done
-    const doneCall = txSceneRef!.update.mock.calls.find(
+    // video URL stored
+    expect(mockSceneUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" } })
+    )
+    // phase=done NOT set
+    const doneCall = mockSceneUpdate.mock.calls.find(
       (args) => (args[0] as { data: Record<string, unknown> }).data?.generationPhase === "done"
     )
     expect(doneCall).toBeUndefined()
   })
 
-  it("video complete, audio already done → sets videoClipUrl AND phase=done", async () => {
+  it("video complete, audio already done → claims lip sync via updateMany", async () => {
     const scene = makeScene({ audioPredictionId: "aud-pred", audioUrl: "https://blob.example.com/audio.wav" })
     mockFindFirst.mockResolvedValue(scene)
-    const freshScene = {
-      ...scene,
-      videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4",
-    }
-
-    let txSceneRef: { update: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> } | null = null
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      txSceneRef = {
-        update: vi.fn().mockResolvedValue({}),
-        findUnique: vi.fn().mockResolvedValue(freshScene),
-      }
-      return fn({ scene: txSceneRef })
-    })
+    const freshScene = { ...scene, videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" }
+    mockSceneFindUnique.mockResolvedValue(freshScene)
+    mockUpdateMany.mockResolvedValue({ count: 1 })
 
     await POST(makeReq({
       request_id: "req-123",
@@ -165,8 +144,9 @@ describe("POST /api/webhooks/fal", () => {
       payload: { video: { url: "https://fal.ai/video.mp4" } },
     }) as never)
 
-    expect(txSceneRef!.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { generationPhase: "done" } })
+    // lip sync claim via updateMany
+    expect(mockUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { generationPhase: "lipsync" } })
     )
   })
 
@@ -231,7 +211,7 @@ describe("POST /api/webhooks/fal", () => {
 
     expect(result).toEqual({ body: { ok: true } })
     expect(mockMirrorUrlToBlob).not.toHaveBeenCalled()
-    expect(mockTransaction).not.toHaveBeenCalled()
+    expect(mockSceneUpdate).not.toHaveBeenCalled()
   })
 
   // ── blob path ────────────────────────────────────────────────────────────
@@ -239,7 +219,7 @@ describe("POST /api/webhooks/fal", () => {
   it("mirrors to correct blob path scenes/{sceneId}/clip.mp4", async () => {
     const scene = makeScene({ id: "scene-42" })
     mockFindFirst.mockResolvedValue(scene)
-    setupTransaction({ ...scene, videoClipUrl: "https://blob.example.com/scenes/scene-42/clip.mp4", audioPredictionId: null })
+    mockSceneFindUnique.mockResolvedValue({ ...scene, videoClipUrl: "https://blob.example.com/scenes/scene-42/clip.mp4", audioPredictionId: null })
 
     await POST(makeReq({
       request_id: "req-123",

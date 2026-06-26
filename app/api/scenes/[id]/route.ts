@@ -6,6 +6,8 @@ import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
+import { describeFirstFrame } from "@/lib/ai/describe"
+import { inferSpeakerCharacterId } from "@/lib/scene-routing"
 import { logError } from "@/lib/logger"
 
 async function createPredictionWithRetry(
@@ -106,7 +108,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   let scene = await prisma.scene.findFirst({
     where: { id },
-    include: { project: { select: { userId: true, characterId: true, voiceId: true } } },
+    include: { project: { select: {
+      userId: true, characterId: true, voiceId: true,
+      characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } },
+    } } },
   })
 
   if (!scene || scene.project.userId !== userId) {
@@ -115,19 +120,59 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   // ── Phase: image prediction running ─────────────────────────────────────
   if (scene.generationPhase === "image" && scene.imagePredictionId && !scene.videoPredictionId) {
-    const pred = await replicate.predictions.get(scene.imagePredictionId)
+    let keyframeUrl: string | null = null
+    let imageFailed = false
 
-    if (pred.status === "succeeded" && pred.output) {
-      const keyframeUrl = Array.isArray(pred.output) ? String(pred.output[0]) : String(pred.output)
+    if (scene.imagePredictionId.startsWith("falmk:")) {
+      // Multi-Kontext (shared multi-character scene)
+      const falRequestId = scene.imagePredictionId.slice(6)
+      const status = await fal.queue.status(FAL_MODELS.kontextMulti, { requestId: falRequestId, logs: false })
+      if ((status.status as string) === "COMPLETED") {
+        const result = await fal.queue.result(FAL_MODELS.kontextMulti, { requestId: falRequestId })
+        keyframeUrl = (result.data as { images: Array<{ url: string }> }).images?.[0]?.url ?? null
+      } else if ((status.status as string) === "FAILED") {
+        imageFailed = true
+      }
+    } else if (scene.imagePredictionId.startsWith("fal:")) {
+      // Flux + LoRA inference (fal-trained character path)
+      const falRequestId = scene.imagePredictionId.slice(4)
+      const status = await fal.queue.status(FAL_MODELS.fluxLora, { requestId: falRequestId, logs: false })
+      if ((status.status as string) === "COMPLETED") {
+        const result = await fal.queue.result(FAL_MODELS.fluxLora, { requestId: falRequestId })
+        keyframeUrl = (result.data as { images: Array<{ url: string }> }).images?.[0]?.url ?? null
+      } else if ((status.status as string) === "FAILED") {
+        imageFailed = true
+      }
+    } else {
+      const pred = await replicate.predictions.get(scene.imagePredictionId)
+      if (pred.status === "succeeded" && pred.output) {
+        keyframeUrl = Array.isArray(pred.output) ? String(pred.output[0]) : String(pred.output)
+      } else if (pred.status === "failed" || pred.status === "canceled") {
+        imageFailed = true
+      }
+    }
 
-      const [character, voice] = await Promise.all([
-        scene.project.characterId
-          ? prisma.character.findUnique({ where: { id: scene.project.characterId } })
-          : null,
+    if (imageFailed) {
+      await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } })
+    } else if (keyframeUrl) {
+      const charId = scene.focusCharacterId ?? scene.project.characterId
+      // Voice: prefer the SPEAKER character's voice (separate field from focus —
+      // a scene focused on Kirti can have Kumar as the speaker if he's
+      // delivering the line). If speakerCharacterId wasn't set at save time,
+      // infer it from voiceScript ("Kirti, will you..." → other character speaks).
+      let voiceCharId = scene.speakerCharacterId ?? null
+      if (!voiceCharId) {
+        const projectChars = scene.project.characters.map((pc) => pc.character)
+        voiceCharId = inferSpeakerCharacterId(scene.voiceScript, projectChars) ?? charId
+      }
+      const [character, scriptedVoice, projectVoice] = await Promise.all([
+        charId ? prisma.character.findUnique({ where: { id: charId } }) : null,
+        voiceCharId ? prisma.voice.findFirst({ where: { characterId: voiceCharId } }) : null,
         scene.project.voiceId
           ? prisma.voice.findUnique({ where: { id: scene.project.voiceId } })
           : null,
       ])
+      const voice = scriptedVoice ?? projectVoice
 
       if (character) {
         const hints = STYLE_HINTS[character.selectedStyle ?? "default"] ?? STYLE_HINTS.default
@@ -141,14 +186,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         const videoPrompt = await sanitizeVideoPrompt(rawVideoPrompt)
 
+        const kokoroVoice = (voice?.ttsParams as { kokoroVoice?: string } | null)?.kokoroVoice
         const projectVoiceId = scene.project.voiceId
         console.log("[scene/poll] image done — voice:", {
           voiceId: projectVoiceId,
+          kokoroVoice: kokoroVoice ?? null,
           hasSampleUrl: !!voice?.sampleAudioUrl,
           ttsText: ttsText?.slice(0, 80),
         })
 
-        const [falSubmit, audioPred, imageUrl] = await Promise.all([
+        const [falSubmit, imageUrl] = await Promise.all([
           fal.queue.submit(FAL_MODELS.wan, {
             input: {
               prompt: videoPrompt,
@@ -162,26 +209,55 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
               num_frames: 100,
             },
           }),
-          voice?.sampleAudioUrl
-            ? toDataUri(voice.sampleAudioUrl)
-                .then((speakerUri) =>
-                  createPredictionWithRetry({
-                    ...predRef(MODELS.xttsV2),
-                    input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: false },
-                  })
-                )
-                .then((pred) => { console.log("[scene/poll] audio pred created:", pred.id); return pred })
-                .catch((e) => {
-                  console.error("[scene/poll] audio pred failed to start:", {
-                    error: e?.message ?? String(e),
-                    voiceId: projectVoiceId,
-                    sampleUrl: voice?.sampleAudioUrl,
-                  })
-                  return null
-                })
-            : (console.log("[scene/poll] no voice configured, skipping audio"), Promise.resolve(null)),
           mirrorUrlToBlob(keyframeUrl, `scenes/${id}/frame.jpg`),
         ])
+
+        // Capture scene 0's visual cues for use by subsequent scenes. Fire-and-forget.
+        if (scene.orderIndex === 0) {
+          const projectId = scene.projectId
+          describeFirstFrame(imageUrl)
+            .then(async (desc) => {
+              if (desc) await prisma.project.update({ where: { id: projectId }, data: { firstFrameDescription: desc } })
+            })
+            .catch((e) => console.error("[scene/poll] firstFrame describe failed:", (e as Error)?.message))
+        }
+
+        let audioUrl: string | null = null
+        let audioPredId: string | null = null
+
+        if (kokoroVoice && ttsText) {
+          try {
+            const r = await fal.subscribe(FAL_MODELS.kokoro, { input: { text: ttsText, voice: kokoroVoice } })
+            const d = r.data as { audio?: { url: string }; audio_url?: string; audio_file?: { url: string } }
+            const rawUrl = d?.audio?.url ?? d?.audio_url ?? d?.audio_file?.url
+            if (rawUrl) {
+              audioUrl = await mirrorUrlToBlob(rawUrl, `scenes/${id}/audio.wav`).catch(() => null)
+            } else {
+              console.error("[scene/poll] kokoro returned no url, response shape:", Object.keys(d ?? {}))
+            }
+            console.log("[scene/poll] kokoro audio done:", audioUrl?.slice(0, 80))
+          } catch (e) {
+            console.error("[scene/poll] kokoro audio failed:", (e as Error)?.message)
+          }
+        } else if (voice?.sampleAudioUrl) {
+          try {
+            const speakerUri = await toDataUri(voice.sampleAudioUrl)
+            const pred = await createPredictionWithRetry({
+              ...predRef(MODELS.xttsV2),
+              input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: false },
+            })
+            console.log("[scene/poll] audio pred created:", pred.id)
+            audioPredId = pred.id
+          } catch (e) {
+            console.error("[scene/poll] audio pred failed to start:", {
+              error: (e as Error)?.message ?? String(e),
+              voiceId: projectVoiceId,
+              sampleUrl: voice?.sampleAudioUrl,
+            })
+          }
+        } else {
+          console.log("[scene/poll] no voice configured, skipping audio")
+        }
 
         // Optimistic lock: if webhook already transitioned this scene, skip
         // (avoids duplicate fal.ai submission when both arrive near-simultaneously)
@@ -191,17 +267,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             imageUrl,
             generationPhase: "video",
             videoPredictionId: falSubmit.request_id,
-            audioPredictionId: audioPred?.id ?? null,
+            audioPredictionId: audioPredId,
+            audioUrl,
           },
         })
       }
-    } else if (pred.status === "failed" || pred.status === "canceled") {
-      await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } })
     }
 
     scene = await prisma.scene.findFirst({
       where: { id },
-      include: { project: { select: { userId: true, characterId: true, voiceId: true } } },
+      include: { project: { select: { userId: true, characterId: true, voiceId: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
     }) ?? scene
   }
 
@@ -249,12 +324,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           const videoUrl = await mirrorUrlToBlob(rawVideo, `scenes/${id}/clip.mp4`)
           await prisma.scene.update({
             where: { id },
-            data: { videoClipUrl: videoUrl, audioUrl, generationPhase: "done" },
+            data: { videoClipUrl: videoUrl, audioUrl: audioUrl ?? scene.audioUrl ?? null, generationPhase: "done" },
           })
 
           scene = await prisma.scene.findFirst({
             where: { id },
-            include: { project: { select: { userId: true, characterId: true, voiceId: true } } },
+            include: { project: { select: { userId: true, characterId: true, voiceId: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
           }) ?? scene
         }
       }

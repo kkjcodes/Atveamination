@@ -87,7 +87,7 @@ describe("Input", () => {
       "bg-white",
       "px-3",
       "py-2",
-      "text-sm"
+      "text-base"
     )
   })
 })

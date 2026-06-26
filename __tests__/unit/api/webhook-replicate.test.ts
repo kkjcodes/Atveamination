@@ -8,6 +8,7 @@ const mockSceneFindFirst = vi.fn()
 const mockSceneFindUnique = vi.fn()
 const mockCharFindUnique = vi.fn()
 const mockVoiceFindUnique = vi.fn()
+const mockVoiceFindFirst = vi.fn()
 const mockTransaction = vi.fn()
 
 vi.mock("@/lib/db/client", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/lib/db/client", () => ({
     },
     voice: {
       findUnique: mockVoiceFindUnique,
+      findFirst: mockVoiceFindFirst,
     },
     $transaction: mockTransaction,
   },
@@ -70,6 +72,15 @@ vi.mock("@/lib/ai/moderation", () => ({
   moderatePrompt: vi.fn(),
 }))
 
+vi.mock("@/lib/ai/describe", () => ({
+  describeCharacter: vi.fn().mockResolvedValue(null),
+  describeFirstFrame: vi.fn().mockResolvedValue(null),
+}))
+
+vi.mock("@/lib/webhooks/verify", () => ({
+  verifyReplicateSignature: vi.fn().mockReturnValue(true),
+}))
+
 vi.mock("next/server", () => ({
   NextRequest: class {},
   NextResponse: {
@@ -83,7 +94,12 @@ const { POST } = await import("@/app/api/webhooks/replicate/route")
 // ── Test helpers ──────────────────────────────────────────────────────────────
 
 function makeReq(body: object) {
-  return { json: () => Promise.resolve(body) }
+  const json = JSON.stringify(body)
+  return {
+    json: () => Promise.resolve(body),
+    text: () => Promise.resolve(json),
+    headers: new Headers({ "webhook-id": "id", "webhook-timestamp": "999999999999", "webhook-signature": "v1,dummysig" }),
+  }
 }
 
 function makeImageScene(overrides: Record<string, unknown> = {}) {
@@ -101,6 +117,8 @@ function makeImageScene(overrides: Record<string, unknown> = {}) {
     project: {
       characterId: "char-1",
       voiceId: "voice-1",
+      // Project characters relation (used by speaker inference fallback)
+      characters: [],
     },
     ...overrides,
   }
@@ -151,6 +169,9 @@ beforeEach(() => {
   // Default character & voice
   mockCharFindUnique.mockResolvedValue(makeCharacter())
   mockVoiceFindUnique.mockResolvedValue(makeVoice())
+  // Per-character voice lookup (focusCharacter has its own voice). Default to
+  // null so the existing tests fall back to project.voiceId (unchanged behavior).
+  mockVoiceFindFirst.mockResolvedValue(null)
 
   // fal.queue.submit returns a request_id
   mockFalQueueSubmit.mockResolvedValue({ request_id: "fal-req-1" })
@@ -208,7 +229,7 @@ describe("POST /api/webhooks/replicate — image completion", () => {
   })
 
   it("happy path without voice → audioPredictionId=null", async () => {
-    const scene = makeImageScene({ project: { characterId: "char-1", voiceId: null } })
+    const scene = makeImageScene({ project: { characterId: "char-1", voiceId: null, characters: [] } })
     mockSceneFindFirst.mockResolvedValue(scene)
 
     await POST(makeReq({
@@ -275,8 +296,9 @@ describe("POST /api/webhooks/replicate — image completion", () => {
   })
 
   it("includes fal webhookUrl in prod, omits it for localhost", async () => {
-    // prod
+    // prod — WEBHOOK_SECRET must also be set for the URL to be injected
     process.env.NEXT_PUBLIC_APP_URL = "https://prod.example.com"
+    process.env.WEBHOOK_SECRET = "test-secret"
     const scene = makeImageScene()
     mockSceneFindFirst.mockResolvedValue(scene)
 
@@ -288,7 +310,7 @@ describe("POST /api/webhooks/replicate — image completion", () => {
 
     expect(mockFalQueueSubmit).toHaveBeenCalledWith(
       "fal-ai/wan-i2v",
-      expect.objectContaining({ webhookUrl: "https://prod.example.com/api/webhooks/fal" })
+      expect.objectContaining({ webhookUrl: "https://prod.example.com/api/webhooks/fal?secret=test-secret" })
     )
 
     vi.clearAllMocks()
@@ -407,8 +429,8 @@ describe("POST /api/webhooks/replicate — image completion", () => {
 })
 
 describe("POST /api/webhooks/replicate — audio completion", () => {
-  // For audio tests, the first findFirst (image lookup) returns null,
-  // and the second findFirst (audio lookup) returns the audio scene.
+  // Route calls findFirst 3 times: image lookup, lipsync lookup, audio lookup.
+  // Audio tests need null for first two, then the audioScene for the third.
 
   function setupAudioScene(audioSceneOverrides: Record<string, unknown> = {}) {
     const audioScene = {
@@ -418,32 +440,23 @@ describe("POST /api/webhooks/replicate — audio completion", () => {
       audioUrl: null,
       ...audioSceneOverrides,
     }
-    // first call → image lookup (not found), second call → audio lookup
     mockSceneFindFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(audioScene)
+      .mockResolvedValueOnce(null)   // image lookup
+      .mockResolvedValueOnce(null)   // lip sync lookup
+      .mockResolvedValueOnce(audioScene)  // audio lookup
 
     return audioScene
   }
 
-  it("audio complete, video already ready → sets phase=done", async () => {
+  it("audio complete, video already ready → claims lip sync via updateMany", async () => {
     setupAudioScene({ videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" })
     mockMirrorUrlToBlob.mockResolvedValue("https://blob.example.com/scenes/scene-1/audio.wav")
-
-    const freshScene = {
+    mockSceneFindUnique.mockResolvedValue({
       id: "scene-1",
       audioUrl: "https://blob.example.com/scenes/scene-1/audio.wav",
       videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4",
-    }
-
-    let txSceneRef: { update: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> } | null = null
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      txSceneRef = {
-        update: vi.fn().mockResolvedValue({}),
-        findUnique: vi.fn().mockResolvedValue(freshScene),
-      }
-      return fn({ scene: txSceneRef })
     })
+    mockSceneUpdateMany.mockResolvedValue({ count: 1 })
 
     await POST(makeReq({
       id: "pred-aud-1",
@@ -451,28 +464,23 @@ describe("POST /api/webhooks/replicate — audio completion", () => {
       output: "https://replicate.delivery/audio.wav",
     }) as never)
 
-    expect(txSceneRef!.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { generationPhase: "done" } })
+    // Audio URL stored via direct update (no transaction)
+    expect(mockSceneUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { audioUrl: "https://blob.example.com/scenes/scene-1/audio.wav" } })
+    )
+    // Lip sync claimed via updateMany
+    expect(mockSceneUpdateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { generationPhase: "lipsync" } })
     )
   })
 
-  it("audio complete, video NOT ready → does NOT set phase=done", async () => {
+  it("audio complete, video NOT ready → stores audio only, no lip sync", async () => {
     setupAudioScene({ videoClipUrl: null })
     mockMirrorUrlToBlob.mockResolvedValue("https://blob.example.com/scenes/scene-1/audio.wav")
-
-    const freshScene = {
+    mockSceneFindUnique.mockResolvedValue({
       id: "scene-1",
       audioUrl: "https://blob.example.com/scenes/scene-1/audio.wav",
       videoClipUrl: null,
-    }
-
-    let txSceneRef: { update: ReturnType<typeof vi.fn>; findUnique: ReturnType<typeof vi.fn> } | null = null
-    mockTransaction.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-      txSceneRef = {
-        update: vi.fn().mockResolvedValue({}),
-        findUnique: vi.fn().mockResolvedValue(freshScene),
-      }
-      return fn({ scene: txSceneRef })
     })
 
     await POST(makeReq({
@@ -481,10 +489,15 @@ describe("POST /api/webhooks/replicate — audio completion", () => {
       output: "https://replicate.delivery/audio.wav",
     }) as never)
 
-    const doneCall = txSceneRef!.update.mock.calls.find(
-      (args) => (args[0] as { data: Record<string, unknown> }).data?.generationPhase === "done"
+    // Audio stored
+    expect(mockSceneUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { audioUrl: "https://blob.example.com/scenes/scene-1/audio.wav" } })
     )
-    expect(doneCall).toBeUndefined()
+    // No lip sync claimed
+    const lipSyncCall = mockSceneUpdateMany.mock.calls.find(
+      (args) => (args[0] as { data: Record<string, unknown> }).data?.generationPhase === "lipsync"
+    )
+    expect(lipSyncCall).toBeUndefined()
   })
 
   it("mirrors audio to correct blob path", async () => {
@@ -495,10 +508,11 @@ describe("POST /api/webhooks/replicate — audio completion", () => {
       audioUrl: null,
     }
     mockSceneFindFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(audioScene)
+      .mockResolvedValueOnce(null)   // image lookup
+      .mockResolvedValueOnce(null)   // lip sync lookup
+      .mockResolvedValueOnce(audioScene)  // audio lookup
     mockMirrorUrlToBlob.mockResolvedValue("https://blob.example.com/scenes/scene-99/audio.wav")
-    setupTransaction({ ...audioScene, audioUrl: "https://blob.example.com/scenes/scene-99/audio.wav" })
+    mockSceneFindUnique.mockResolvedValue({ ...audioScene, audioUrl: "https://blob.example.com/scenes/scene-99/audio.wav", videoClipUrl: null })
 
     await POST(makeReq({
       id: "pred-aud-1",

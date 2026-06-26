@@ -1,11 +1,15 @@
 "use client"
 
 import { Suspense } from "react"
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback, useRef, useMemo } from "react"
 import { orchestrateSceneGeneration } from "@/lib/studio/orchestrate"
+import { assignSceneFocus } from "@/lib/storyboard"
+import { PRESET_SCENES } from "@/lib/presets/scenes"
+import { detectMultiCharScene, hasRelationalCues } from "@/lib/scene-routing"
 import { useSearchParams } from "next/navigation"
 import Nav from "@/components/nav"
 import BriefModal from "@/components/brief-modal"
+import ShareButtons from "@/components/share-buttons"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -16,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import type { Character, JobStatus, Scene } from "@/types"
 
 const MAX_SCENES = 100
+const MAX_CHARACTERS = 4
 
 type LocalScene = {
   id: string | null
@@ -26,6 +31,13 @@ type LocalScene = {
   imageUrl: string | null
   videoClipUrl: string | null
   audioUrl: string | null
+  // Propagated from preset scenes; null/undefined for AI-generated briefs.
+  // "shared" forces multi-Kontext (focus_character_id=null) so we don't render
+  // the same LoRA character twice when a scene needs two distinct people.
+  focusRole?: "primary" | "secondary" | "shared" | "any"
+  // Speaker name from the AI brief (one of the project character names).
+  // Resolved to a character ID at scene-save time so audio uses the right voice.
+  speakerName?: string
 }
 
 function SparkleIcon({ className }: { className?: string }) {
@@ -74,22 +86,58 @@ function makeLocalScene(): LocalScene {
   }
 }
 
-type BriefScene = { description: string; voiceScript: string; durationSeconds: 5 | 10 | 15 }
+type BriefScene = {
+  description: string
+  voiceScript: string
+  durationSeconds: 5 | 10 | 15
+  // "shared" means the scene shows multiple characters together — must route
+  // through Multi-Kontext, not single-character LoRA, to avoid duplicating one
+  // character to fill both subject slots in the prompt. Optional: AI-generated
+  // briefs leave this undefined and storyboard auto-assigns focus.
+  focusRole?: "primary" | "secondary" | "shared" | "any"
+  // Which character is delivering the voice line. From the AI brief, optional
+  // for single-character projects.
+  speakerName?: string
+}
 
 const SCENE_COUNT_OPTIONS = [2, 3, 4, 5, 6, 8]
+
+type CharSummary = Pick<Character, "id" | "name" | "selected_style_url" | "source_photo_url" | "selected_style">
+
+function CharacterPill({ char, onRemove }: { char: CharSummary; onRemove?: () => void }) {
+  const imgUrl = char.selected_style_url ?? char.source_photo_url ?? null
+  return (
+    <div className="flex items-center gap-1.5 bg-zinc-100 rounded-full pl-1 pr-2.5 py-1">
+      {imgUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={imgUrl} alt={char.name} className="w-6 h-6 rounded-full object-cover shrink-0" />
+      ) : (
+        <div className="w-6 h-6 rounded-full bg-violet-100 flex items-center justify-center shrink-0 text-xs">👤</div>
+      )}
+      <span className="text-sm font-medium text-zinc-800 truncate max-w-[120px]">{char.name}</span>
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="ml-0.5 text-zinc-400 hover:text-zinc-600 text-lg leading-none">&times;</button>
+      )}
+    </div>
+  )
+}
 
 function StartModal({
   open,
   title,
   onTitleChange,
-  characterStyle,
+  selectedCharIds,
+  onSelectedCharIdsChange,
+  allUserChars,
   onApply,
   onSkip,
 }: {
   open: boolean
   title: string
   onTitleChange: (t: string) => void
-  characterStyle?: string
+  selectedCharIds: string[]
+  onSelectedCharIdsChange: (ids: string[]) => void
+  allUserChars: CharSummary[]
   onApply: (scenes: BriefScene[]) => void
   onSkip: () => void
 }) {
@@ -97,8 +145,60 @@ function StartModal({
   const [numScenes, setNumScenes] = useState(4)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showPresets, setShowPresets] = useState(false)
+  const [activeTag, setActiveTag] = useState("all")
+  const [selectedPresetIds, setSelectedPresetIds] = useState<string[]>([])
 
   if (!open) return null
+
+  const PRESET_TAGS = ["all", "everyday", "adventure", "celebration", "heartfelt", "travel", "fun"]
+  const filteredPresets = activeTag === "all"
+    ? PRESET_SCENES
+    : PRESET_SCENES.filter((p) => p.tags.includes(activeTag))
+
+  function togglePreset(id: string) {
+    setSelectedPresetIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
+  }
+
+  function handleUsePresets() {
+    const ordered = selectedPresetIds
+      .map((id) => PRESET_SCENES.find((p) => p.id === id))
+      .filter(Boolean)
+    onApply(ordered.map((p) => {
+      // For single-character projects, rewrite shared preset descriptions so the
+      // model doesn't try to render two characters and duplicate the LoRA's face.
+      const isSingleChar = selectedCharIds.length === 1
+      const description = (isSingleChar && p!.focusRole === "shared")
+        ? p!.description
+            .replace(/\btwo characters\b/gi, "the character")
+            .replace(/\bTwo or more characters\b/gi, "The character")
+            .replace(/\bcharacters\b/gi, "character")
+            .replace(/\btheir\b/gi, "their")
+        : p!.description
+      return {
+        description,
+        voiceScript: p!.voiceScript,
+        durationSeconds: p!.durationSeconds,
+        focusRole: p!.focusRole,
+      }
+    }))
+  }
+
+  const selectedChars = allUserChars.filter((c) => selectedCharIds.includes(c.id))
+  const availableChars = allUserChars.filter((c) => !selectedCharIds.includes(c.id))
+  const primaryStyle = selectedChars[0]?.selected_style ?? undefined
+
+  function addChar(id: string) {
+    if (selectedCharIds.length < MAX_CHARACTERS && !selectedCharIds.includes(id)) {
+      onSelectedCharIdsChange([...selectedCharIds, id])
+    }
+  }
+
+  function removeChar(id: string) {
+    if (selectedCharIds.length > 1) {
+      onSelectedCharIdsChange(selectedCharIds.filter((x) => x !== id))
+    }
+  }
 
   async function handleGenerate() {
     if (!brief.trim()) return
@@ -108,7 +208,12 @@ function StartModal({
       const res = await fetch("/api/generate-brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief, style: characterStyle, num_scenes: numScenes }),
+        body: JSON.stringify({
+          brief,
+          style: primaryStyle,
+          num_scenes: numScenes,
+          character_names: selectedChars.map((c) => c.name),
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -136,7 +241,7 @@ function StartModal({
 
         <div className="px-7 pt-7 pb-3">
           <h2 className="text-2xl font-bold text-zinc-900">Let&apos;s make your video</h2>
-          <p className="text-sm text-zinc-400 mt-1">Give it a name, describe your idea, and AI will write the scenes for you</p>
+          <p className="text-sm text-zinc-400 mt-1">Name it, pick your characters, describe your idea</p>
         </div>
 
         <div className="px-7 pb-6 space-y-5 overflow-y-auto">
@@ -151,6 +256,37 @@ function StartModal({
               autoFocus
             />
           </div>
+
+          {/* Characters */}
+          {allUserChars.length > 0 && (
+            <div>
+              <Label className="text-sm font-medium text-zinc-700 mb-2 block">
+                Characters in this video
+                <span className="text-xs font-normal text-zinc-400 ml-1.5">up to {MAX_CHARACTERS}</span>
+              </Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {selectedChars.map((char) => (
+                  <CharacterPill
+                    key={char.id}
+                    char={char}
+                    onRemove={selectedCharIds.length > 1 ? () => removeChar(char.id) : undefined}
+                  />
+                ))}
+              </div>
+              {availableChars.length > 0 && selectedCharIds.length < MAX_CHARACTERS && (
+                <select
+                  className="mt-1 text-sm text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-violet-100 transition-colors"
+                  value=""
+                  onChange={(e) => { if (e.target.value) addChar(e.target.value) }}
+                >
+                  <option value="">+ Add another character</option>
+                  {availableChars.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* AI script section */}
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-5 space-y-4">
@@ -202,13 +338,89 @@ function StartModal({
 
             <Button
               onClick={handleGenerate}
-              disabled={loading || !brief.trim()}
+              disabled={loading || !brief.trim() || selectedCharIds.length === 0}
               className="w-full bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white border-0 gap-2"
               size="lg"
             >
               <SparkleIcon className="w-4 h-4 shrink-0" />
               {loading ? "Writing your script…" : "Generate script with AI"}
             </Button>
+          </div>
+        </div>
+
+        {/* Preset scenes picker */}
+        <div className="px-7 pb-4">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-semibold text-zinc-700">No script? Pick preset scenes</p>
+              <button
+                type="button"
+                onClick={() => setShowPresets(!showPresets)}
+                className="text-xs font-medium text-violet-600 hover:text-violet-800 transition-colors"
+              >
+                {showPresets ? "Hide ↑" : "Browse 20 scenes →"}
+              </button>
+            </div>
+            <p className="text-xs text-zinc-400 mb-3">Ready-made scene descriptions you can use as-is or edit.</p>
+
+            {showPresets && (
+              <>
+                {/* Tag filters */}
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {PRESET_TAGS.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setActiveTag(tag)}
+                      className={`px-2.5 py-1 text-xs rounded-full border font-medium transition-colors ${
+                        activeTag === tag
+                          ? "bg-violet-600 text-white border-violet-600"
+                          : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50"
+                      }`}
+                    >
+                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Preset cards */}
+                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+                  {filteredPresets.map((preset) => {
+                    const selected = selectedPresetIds.includes(preset.id)
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => togglePreset(preset.id)}
+                        className={`text-left p-2.5 rounded-lg border-2 transition-all ${
+                          selected
+                            ? "border-violet-500 bg-violet-50"
+                            : "border-zinc-200 bg-white hover:border-zinc-300"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1 mb-1">
+                          <p className="text-xs font-semibold text-zinc-800 leading-tight">{preset.title}</p>
+                          {selected && <span className="text-violet-500 text-sm leading-none shrink-0">✓</span>}
+                        </div>
+                        <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">{preset.description}</p>
+                        <span className="inline-block mt-1.5 text-xs text-zinc-500 bg-zinc-100 rounded px-1.5 py-0.5">
+                          {preset.durationSeconds}s
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {selectedPresetIds.length > 0 && (
+                  <Button
+                    onClick={handleUsePresets}
+                    className="w-full mt-3 bg-zinc-800 hover:bg-zinc-900 text-white border-0"
+                  >
+                    Use {selectedPresetIds.length} preset scene{selectedPresetIds.length !== 1 ? "s" : ""}
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -228,11 +440,21 @@ function StartModal({
 
 function StudioContent() {
   const searchParams = useSearchParams()
-  const characterId = searchParams.get("character")
   const voiceId = searchParams.get("voice")
 
-  const [character, setCharacter] = useState<Character | null>(null)
-  const [characterLoading, setCharacterLoading] = useState(true)
+  const initialCharIds = useMemo(() => {
+    const multi = searchParams.get("characters")
+    const single = searchParams.get("character")
+    if (multi) return multi.split(",").filter(Boolean)
+    if (single) return [single]
+    return []
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [selectedCharIds, setSelectedCharIds] = useState<string[]>(initialCharIds)
+  const [allUserChars, setAllUserChars] = useState<CharSummary[]>([])
+  const [charsLoading, setCharsLoading] = useState(true)
+
   const [title, setTitle] = useState("Untitled Video")
   const [scenes, setScenes] = useState<LocalScene[]>([makeLocalScene()])
   const [projectId, setProjectId] = useState<string | null>(null)
@@ -244,12 +466,14 @@ function StudioContent() {
   const [briefModalOpen, setBriefModalOpen] = useState(false)
   const [startModalOpen, setStartModalOpen] = useState(true)
 
-  // Refs so async callbacks always read the latest value without stale closures
   const scenesRef = useRef(scenes)
   useEffect(() => { scenesRef.current = scenes }, [scenes])
 
   const projectIdRef = useRef<string | null>(projectId)
   useEffect(() => { projectIdRef.current = projectId }, [projectId])
+
+  const selectedCharIdsRef = useRef(selectedCharIds)
+  useEffect(() => { selectedCharIdsRef.current = selectedCharIds }, [selectedCharIds])
 
   type UsageLimits = { used: number; limit: number | null; resetsAt: string | null; unlimited: boolean }
   const [sceneUsage, setSceneUsage] = useState<UsageLimits | null>(null)
@@ -258,6 +482,14 @@ function StudioContent() {
     fetch("/api/limits").then((r) => r.json()).then((d) => {
       setSceneUsage({ ...d.scenes, unlimited: d.unlimited ?? false })
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch("/api/characters")
+      .then((r) => r.json())
+      .then((data) => setAllUserChars(Array.isArray(data.characters) ? data.characters : []))
+      .catch(() => {})
+      .finally(() => setCharsLoading(false))
   }, [])
 
   // Debounced title save
@@ -280,14 +512,8 @@ function StudioContent() {
     return h <= 1 ? "resets in <1h" : `resets in ${h}h`
   }
 
-  useEffect(() => {
-    if (!characterId) { setCharacterLoading(false); return }
-    fetch(`/api/characters/${characterId}`)
-      .then((r) => r.json())
-      .then((data) => setCharacter(data.character ?? null))
-      .catch(() => null)
-      .finally(() => setCharacterLoading(false))
-  }, [characterId])
+  const selectedChars = allUserChars.filter((c) => selectedCharIds.includes(c.id))
+  const primaryChar = selectedChars[0] ?? null
 
   const updateScene = useCallback((index: number, patch: Partial<LocalScene>) => {
     setScenes((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)))
@@ -300,30 +526,47 @@ function StudioContent() {
   const deleteScene = useCallback(async (index: number) => {
     const scene = scenesRef.current[index]
     if (scene?.id) {
-      // Fire and forget — don't block the UI
       fetch(`/api/scenes/${scene.id}`, { method: "DELETE" }).catch(() => {})
     }
     setScenes((prev) => prev.filter((_, i) => i !== index))
   }, [])
 
   const ensureProject = useCallback(async (): Promise<string> => {
-    // Read from ref, not state — state updates are async and won't be visible
-    // to subsequent calls within the same async chain (stale closure).
     if (projectIdRef.current) return projectIdRef.current
+    const charIds = selectedCharIdsRef.current
+
+    // Auto-voice EVERY character — each one needs its own voice so per-scene
+    // dialogue plays in the right voice (Kumar speaks as Kumar, Kirti as Kirti).
+    // The first character's voice becomes the project default (fallback for
+    // shared scenes). Errors are non-fatal; we surface them as a banner.
+    let resolvedVoiceId = voiceId
+    if (charIds.length > 0) {
+      const results = await Promise.allSettled(
+        charIds.map((id) => fetch(`/api/characters/${id}/auto-voice`, { method: "POST" }).then((r) => r.json()))
+      )
+      const firstSuccess = results.find((r) => r.status === "fulfilled" && r.value?.voiceId)
+      if (!resolvedVoiceId && firstSuccess?.status === "fulfilled") {
+        resolvedVoiceId = firstSuccess.value.voiceId
+      }
+      if (!resolvedVoiceId) {
+        setError("Couldn't set up a voice automatically — your video will have no audio. You can add a voice later from the character page.")
+      }
+    }
+
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ character_id: characterId, voice_id: voiceId, title }),
+      body: JSON.stringify({ character_ids: charIds, voice_id: resolvedVoiceId, title }),
     })
     if (!res.ok) {
       const data = await res.json()
       throw new Error(data.error ?? "Failed to create project")
     }
     const { project } = await res.json()
-    projectIdRef.current = project.id  // update ref immediately so next call sees it
+    projectIdRef.current = project.id
     setProjectId(project.id)
     return project.id
-  }, [characterId, voiceId, title])
+  }, [voiceId, title])
 
   const pollScene = useCallback(async (sceneId: string): Promise<Scene> => {
     while (true) {
@@ -336,8 +579,6 @@ function StudioContent() {
     }
   }, [])
 
-  // Polls until scene 1's keyframe image is stored — faster interval than
-  // pollScene since we only need to unblock scenes 2-N, not wait for video.
   const pollUntilImageReady = useCallback(async (sceneId: string): Promise<void> => {
     while (true) {
       await new Promise((r) => setTimeout(r, 3000))
@@ -349,8 +590,6 @@ function StudioContent() {
     }
   }, [])
 
-  // Core: ensure a scene has a DB record, then trigger generation and poll.
-  // Returns "done", "failed", or "limit" (caller should stop bulk generation).
   const runScene = useCallback(async (index: number): Promise<"done" | "failed" | "limit"> => {
     const scene = scenesRef.current[index]
     if (!scene) return "failed"
@@ -362,11 +601,46 @@ function StudioContent() {
       let sceneId = scene.id
 
       if (!sceneId) {
+        const charIds = selectedCharIdsRef.current
+        const totalScenes = scenesRef.current.length
+        const focusAssignments = assignSceneFocus(charIds, totalScenes)
+        // Force shared (focus=null) when either:
+        //  - the scene came from a "shared" preset, OR
+        //  - the description mentions 2+ project character names by name.
+        // Both route through Multi-Kontext, which composes distinct characters
+        // from their references instead of duplicating a single LoRA.
+        const projectChars = allUserChars.filter((c) => charIds.includes(c.id))
+        const charNames = projectChars.map((c) => c.name)
+        // Force shared (focus=null) on: preset marked shared, description names
+        // 2+ characters, OR description has relational cues implying a second
+        // subject ("they", "approaching figure", "embrace", etc). Only meaningful
+        // when 2+ project characters exist; otherwise stays on single-char path.
+        const isMultiCharScene = charIds.length > 1 && (
+          detectMultiCharScene(scene.description, charNames) ||
+          hasRelationalCues(scene.description)
+        )
+        const forceShared = scene.focusRole === "shared" || isMultiCharScene
+        const focusCharId = forceShared
+          ? null
+          : focusAssignments[index]?.focusCharacterId ?? null
+        // Resolve speaker name (from AI brief) to a character ID. Audio for this
+        // scene plays in this character's voice regardless of who's on screen.
+        const speakerCharId = scene.speakerName
+          ? projectChars.find((c) => c.name === scene.speakerName)?.id ?? null
+          : null
+
         const res = await fetch(`/api/projects/${pid}/scenes`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            scenes: [{ description: scene.description, voice_script: scene.voiceScript || undefined, order_index: index, duration_seconds: scene.durationSeconds }],
+            scenes: [{
+              description: scene.description,
+              voice_script: scene.voiceScript || undefined,
+              order_index: index,
+              duration_seconds: scene.durationSeconds,
+              focus_character_id: charIds.length > 1 ? focusCharId : null,
+              speaker_character_id: speakerCharId,
+            }],
           }),
         })
         if (!res.ok) { updateScene(index, { status: "failed" }); return "failed" }
@@ -374,7 +648,6 @@ function StudioContent() {
         sceneId = created.id
         updateScene(index, { id: sceneId })
       } else {
-        // Regenerating an existing scene — sync description changes to DB first
         await fetch(`/api/scenes/${sceneId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -413,7 +686,6 @@ function StudioContent() {
     }
   }, [ensureProject, updateScene, pollScene, formatReset])
 
-  // Single-scene generate (per-scene button)
   const generateOne = useCallback(async (index: number) => {
     if (generating) return
     setError(null)
@@ -424,11 +696,6 @@ function StudioContent() {
     setCurrentSceneIndex(null)
   }, [generating, runScene])
 
-  // Bulk: creates all DB records first, then generates with scene 1 as anchor.
-  // Scene 1's keyframe is generated first; once its imageUrl is in the DB,
-  // scenes 2-N start in parallel — they reference scene 1 for character consistency.
-  // All scenes appear as "generating" in the UI from the start.
-  // Server drives completion via webhooks even if the user leaves the page.
   const generateAllRemaining = useCallback(async () => {
     setError(null)
     setGenerating(true)
@@ -440,17 +707,18 @@ function StudioContent() {
 
     if (toProcess.length === 0) { setGenerating(false); return }
 
-    // Show all scenes as generating immediately — the anchor wait is invisible to the user
     toProcess.forEach(({ _index }) => updateScene(_index, { status: "processing" }))
 
     try {
       const pid = await ensureProject()
+      const charIds = selectedCharIdsRef.current
+      const focusAssignments = assignSceneFocus(charIds, snapshot.length)
 
-      // Step 1: Create all DB records upfront in parallel so they exist immediately.
-      // If the user leaves, the server can still complete them via webhooks.
+      const projectChars = allUserChars.filter((c) => charIds.includes(c.id))
+      const charNames = projectChars.map((c) => c.name)
       const withIds = await Promise.all(
         toProcess.map(async (item) => {
-          const { _index, id, description, voiceScript, durationSeconds } = item
+          const { _index, id, description, voiceScript, durationSeconds, focusRole, speakerName } = item
           if (id) {
             await fetch(`/api/scenes/${id}`, {
               method: "PATCH",
@@ -459,11 +727,33 @@ function StudioContent() {
             }).catch(() => {})
             return { ...item, resolvedId: id }
           }
+          // Force shared (focus=null) when: preset marked shared, description
+          // names 2+ characters, OR description has relational cues implying a
+          // second person. Multi-Kontext composes distinct references; LoRA
+          // alone would duplicate one trained character into both subject slots.
+          const isMultiCharScene = charIds.length > 1 && (
+            detectMultiCharScene(description, charNames) ||
+            hasRelationalCues(description)
+          )
+          const forceShared = focusRole === "shared" || isMultiCharScene
+          const focusCharId = forceShared
+            ? null
+            : charIds.length > 1 ? (focusAssignments[_index]?.focusCharacterId ?? null) : null
+          const speakerCharId = speakerName
+            ? projectChars.find((c) => c.name === speakerName)?.id ?? null
+            : null
           const res = await fetch(`/api/projects/${pid}/scenes`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              scenes: [{ description, voice_script: voiceScript || undefined, order_index: _index, duration_seconds: durationSeconds }],
+              scenes: [{
+                description,
+                voice_script: voiceScript || undefined,
+                order_index: _index,
+                duration_seconds: durationSeconds,
+                focus_character_id: focusCharId,
+                speaker_character_id: speakerCharId,
+              }],
             }),
           })
           if (!res.ok) return { ...item, resolvedId: null as string | null }
@@ -476,7 +766,6 @@ function StudioContent() {
       const valid = withIds.filter((x) => x.resolvedId !== null)
       if (valid.length === 0) return
 
-      // Step 2-4 handled by orchestrate: scene 1 keyframe first → then rest in parallel
       await orchestrateSceneGeneration(
         valid.map(({ resolvedId, _index }) => ({ sceneId: resolvedId!, orderIndex: _index })),
         {
@@ -517,7 +806,7 @@ function StudioContent() {
         }
       )
     } catch {
-      // Individual errors are handled inside callbacks; catch here to unblock finally
+      // Individual errors handled inside callbacks
     } finally {
       setGenerating(false)
       setCurrentSceneIndex(null)
@@ -526,6 +815,15 @@ function StudioContent() {
 
   const generateFinalVideo = useCallback(async () => {
     if (!projectId) return
+    // Warn if any clip-ready scene is missing audio — stitching now will produce silent gaps
+    const clipsWithoutAudio = scenesRef.current.filter((s) => s.videoClipUrl && !s.audioUrl).length
+    if (clipsWithoutAudio > 0) {
+      const total = scenesRef.current.filter((s) => s.videoClipUrl).length
+      const ok = window.confirm(
+        `${clipsWithoutAudio} of ${total} scene${total !== 1 ? "s" : ""} have no audio — those parts will be silent.\n\nContinue with silent gaps, or click Cancel to wait/regenerate?`
+      )
+      if (!ok) return
+    }
     setError(null)
     setStitching(true)
     try {
@@ -558,6 +856,7 @@ function StudioContent() {
   const remaining = scenes.filter((s) => !s.videoClipUrl && s.description.trim())
   const allScenesHaveClips = scenes.length > 0 && scenes.every((s) => s.videoClipUrl)
   const atLimit = sceneUsage !== null && !sceneUsage.unlimited && sceneUsage.limit !== null && sceneUsage.used >= sceneUsage.limit
+  const hasCharacter = selectedCharIds.length > 0
 
   const progressPercent =
     currentSceneIndex !== null ? Math.round(((currentSceneIndex + 1) / scenes.length) * 100) : 0
@@ -567,31 +866,48 @@ function StudioContent() {
       <Nav breadcrumbs={[{ label: "New Video" }]} />
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Sidebar — hidden on mobile */}
+        {/* Sidebar */}
         <aside className="hidden md:flex md:w-72 shrink-0 border-r border-zinc-200 bg-white flex-col overflow-y-auto">
           <div className="p-6 border-b border-zinc-100">
-            <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-4">Character</h2>
-            {characterLoading && <div className="h-40 rounded-xl bg-zinc-100 animate-pulse" />}
-            {!characterLoading && !character && <p className="text-sm text-zinc-400">No character selected.</p>}
-            {character && (
-              <Card className="overflow-hidden">
-                {(character.selected_style_url || character.source_photo_url) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={character.selected_style_url ?? character.source_photo_url}
-                    alt={character.name}
-                    className="w-full h-40 object-cover"
-                    onError={(e) => {
-                      const img = e.currentTarget
-                      if (img.src !== character.source_photo_url && character.source_photo_url) img.src = character.source_photo_url
+            <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-4">
+              {selectedChars.length > 1 ? "Characters" : "Character"}
+            </h2>
+            {charsLoading && <div className="h-40 rounded-xl bg-zinc-100 animate-pulse" />}
+            {!charsLoading && selectedChars.length === 0 && (
+              <p className="text-sm text-zinc-400">No character selected.</p>
+            )}
+            {selectedChars.length > 0 && (
+              <div className="space-y-3">
+                {selectedChars.map((char) => {
+                  const imgUrl = char.selected_style_url ?? char.source_photo_url ?? null
+                  return (
+                    <Card key={char.id} className="overflow-hidden">
+                      {imgUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={imgUrl} alt={char.name} className="w-full h-28 object-cover" />
+                      )}
+                      <CardContent className="p-3">
+                        <p className="font-semibold text-zinc-900 text-sm">{char.name}</p>
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+                {/* Add character button */}
+                {allUserChars.filter((c) => !selectedCharIds.includes(c.id)).length > 0 && selectedCharIds.length < MAX_CHARACTERS && (
+                  <select
+                    className="w-full text-sm text-violet-700 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-violet-100 transition-colors"
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) setSelectedCharIds((prev) => [...prev, e.target.value])
                     }}
-                  />
+                  >
+                    <option value="">+ Add character</option>
+                    {allUserChars.filter((c) => !selectedCharIds.includes(c.id)).map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
                 )}
-                <CardContent className="p-4">
-                  <p className="font-semibold text-zinc-900">{character.name}</p>
-                  {character.lora_training_status && <p className="text-xs text-zinc-400 mt-1">LoRA: {character.lora_training_status}</p>}
-                </CardContent>
-              </Card>
+              </div>
             )}
           </div>
 
@@ -651,7 +967,6 @@ function StudioContent() {
               />
             </div>
 
-            {/* Desktop buttons */}
             <div className="hidden md:flex items-center gap-3 shrink-0">
               {finalVideoUrl ? (
                 <a href={finalVideoUrl} target="_blank" rel="noopener noreferrer"
@@ -669,7 +984,7 @@ function StudioContent() {
                     Generate Script
                   </Button>
                   {!allScenesHaveClips && remaining.length > 0 && (
-                    <Button onClick={generateAllRemaining} disabled={generating || stitching || !characterId || atLimit}
+                    <Button onClick={generateAllRemaining} disabled={generating || stitching || !hasCharacter || atLimit}
                       title={atLimit ? `Daily limit reached (${sceneUsage?.used}/${sceneUsage?.limit})` : undefined}>
                       {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
                     </Button>
@@ -726,12 +1041,31 @@ function StudioContent() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-green-800">All {scenes.length} scene{scenes.length !== 1 ? "s" : ""} ready!</p>
                   <p className="text-xs text-green-600 hidden sm:block">Review the clips below, then generate your final video.</p>
+                  {scenes.some((s) => s.videoClipUrl && !s.audioUrl) && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      ⚠️ {scenes.filter((s) => s.videoClipUrl && !s.audioUrl).length} scene{scenes.filter((s) => s.videoClipUrl && !s.audioUrl).length !== 1 ? "s have" : " has"} no audio — those parts will be silent in the final video.
+                    </p>
+                  )}
                 </div>
               </div>
               <Button onClick={generateFinalVideo} disabled={stitching} className="bg-green-600 hover:bg-green-700 text-white shrink-0 gap-2">
                 <PlayIcon className="w-4 h-4 shrink-0" />
                 {stitching ? "Stitching..." : "Generate Final Video"}
               </Button>
+            </div>
+          )}
+
+          {/* Final video — preview + share */}
+          {finalVideoUrl && (
+            <div className="bg-green-50 border-b border-green-200 px-4 md:px-8 py-5 shrink-0">
+              <div className="flex items-start gap-4 max-w-4xl mx-auto">
+                <video src={finalVideoUrl} controls className="rounded-lg shadow-sm w-56 md:w-72 shrink-0 bg-black" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-green-800 mb-1">Your video is ready 🎉</p>
+                  <p className="text-xs text-zinc-600 mb-3">Share it with friends and family — anyone with the link can watch.</p>
+                  <ShareButtons url={finalVideoUrl} />
+                </div>
+              </div>
             </div>
           )}
 
@@ -751,7 +1085,7 @@ function StudioContent() {
                 scene={scene}
                 disabled={generating || stitching}
                 atLimit={atLimit}
-                characterId={characterId}
+                hasCharacter={hasCharacter}
                 onUpdate={(patch) => updateScene(index, patch)}
                 onDelete={() => deleteScene(index)}
                 onGenerate={() => generateOne(index)}
@@ -787,7 +1121,7 @@ function StudioContent() {
                   {stitching ? "Stitching..." : "Final Video"}
                 </Button>
               ) : remaining.length > 0 ? (
-                <Button onClick={generateAllRemaining} disabled={generating || stitching || !characterId || atLimit} className="flex-1">
+                <Button onClick={generateAllRemaining} disabled={generating || stitching || !hasCharacter || atLimit} className="flex-1">
                   {generating ? "Generating..." : `Generate ${remaining.length}`}
                 </Button>
               ) : null}
@@ -800,7 +1134,9 @@ function StudioContent() {
         open={startModalOpen}
         title={title}
         onTitleChange={setTitle}
-        characterStyle={character?.selected_style ?? undefined}
+        selectedCharIds={selectedCharIds}
+        onSelectedCharIdsChange={setSelectedCharIds}
+        allUserChars={allUserChars}
         onApply={handleStartApply}
         onSkip={() => setStartModalOpen(false)}
       />
@@ -809,7 +1145,8 @@ function StudioContent() {
         open={briefModalOpen}
         onClose={() => setBriefModalOpen(false)}
         onApply={applyBriefScenes}
-        characterStyle={character?.selected_style ?? undefined}
+        characterStyle={primaryChar?.selected_style ?? undefined}
+        characterNames={selectedChars.map((c) => c.name)}
       />
     </div>
   )
@@ -822,24 +1159,23 @@ type SceneCardProps = {
   scene: LocalScene
   disabled: boolean
   atLimit: boolean
-  characterId: string | null
+  hasCharacter: boolean
   onUpdate: (patch: Partial<LocalScene>) => void
   onDelete: () => void
   onGenerate: () => void
   showDelete: boolean
 }
 
-function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onDelete, onGenerate, showDelete }: SceneCardProps) {
+function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, onDelete, onGenerate, showDelete }: SceneCardProps) {
   const isProcessing = scene.status === "processing"
   const isDone = !!scene.videoClipUrl
   const isFailed = scene.status === "failed"
-  const canGenerate = !disabled && !atLimit && !!characterId && scene.description.trim() !== ""
+  const canGenerate = !disabled && !atLimit && hasCharacter && scene.description.trim() !== ""
 
   return (
     <Card className={`overflow-hidden transition-shadow ${isDone ? "ring-1 ring-green-200" : isFailed ? "ring-1 ring-red-200" : ""}`}>
       <CardContent className="p-3 md:p-5">
 
-        {/* Card header: number + status + delete */}
         <div className="flex items-center gap-2 mb-3">
           <span className="text-xs font-mono font-semibold text-zinc-400 bg-zinc-100 rounded px-2 py-0.5">
             Scene {index + 1}
@@ -872,7 +1208,6 @@ function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onD
           )}
         </div>
 
-        {/* Generated clip (shown above description when done) */}
         {isDone && scene.videoClipUrl && (
           <div className="mb-3">
             <video src={scene.videoClipUrl} controls className="w-full rounded-lg border border-zinc-200 max-h-48" />
@@ -885,7 +1220,6 @@ function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onD
           </div>
         )}
 
-        {/* Description + narration fields */}
         <div className="space-y-3">
           <div>
             <Label htmlFor={`desc-${index}`} className="text-xs text-zinc-500 mb-1 block">
@@ -936,7 +1270,6 @@ function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onD
           </div>
         </div>
 
-        {/* Per-scene action button */}
         <div className="mt-3 flex justify-end">
           {isProcessing ? (
             <Button disabled size="sm" className="gap-2">
@@ -950,7 +1283,7 @@ function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onD
               onClick={onGenerate}
               disabled={!canGenerate}
               className="gap-1.5 text-zinc-600 hover:text-violet-700 hover:border-violet-300"
-              title={!scene.description.trim() ? "Add a description first" : atLimit ? "Daily limit reached" : !characterId ? "No character selected" : "Regenerate this scene with the current description"}
+              title={!scene.description.trim() ? "Add a description first" : atLimit ? "Daily limit reached" : !hasCharacter ? "No character selected" : "Regenerate this scene with the current description"}
             >
               <RefreshIcon className="w-3.5 h-3.5" />
               Regenerate
@@ -960,18 +1293,17 @@ function SceneCard({ index, scene, disabled, atLimit, characterId, onUpdate, onD
               size="sm"
               onClick={onGenerate}
               disabled={!canGenerate}
-              title={!scene.description.trim() ? "Add a description first" : atLimit ? "Daily limit reached" : !characterId ? "No character selected" : "Generate this scene"}
+              title={!scene.description.trim() ? "Add a description first" : atLimit ? "Daily limit reached" : !hasCharacter ? "No character selected" : "Generate this scene"}
             >
               Generate Scene
             </Button>
           )}
         </div>
 
-        {/* Hints */}
         {!isDone && !isProcessing && scene.description.trim() === "" && (
           <p className="text-xs text-zinc-400 mt-2 text-right">Write a description to enable generation</p>
         )}
-        {!characterId && !isDone && (
+        {!hasCharacter && !isDone && (
           <p className="text-xs text-amber-600 mt-2 text-right">Select a character first</p>
         )}
       </CardContent>

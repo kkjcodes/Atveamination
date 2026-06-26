@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import Nav from "@/components/nav"
 import DeleteButton from "@/components/delete-button"
+import ShareButtons from "@/components/share-buttons"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -56,9 +57,9 @@ function makeLocalScene(): LocalScene {
 }
 
 function deriveStatus(s: Record<string, unknown>): LocalScene["status"] {
-  if (s.video_clip_url || s.videoClipUrl) return "succeeded"
   const phase = (s.generation_phase ?? s.generationPhase) as string | null
-  if (phase === "image" || phase === "video") return "processing"
+  if ((s.video_clip_url || s.videoClipUrl) && phase === "done") return "succeeded"
+  if (phase === "image" || phase === "video" || phase === "lipsync") return "processing"
   if (phase === "failed") return "failed"
   return "idle"
 }
@@ -71,7 +72,7 @@ async function pollUntilDone(sceneId: string): Promise<Record<string, unknown>> 
     if (!res.ok) continue
     const { scene } = await res.json()
     if (scene.generation_phase === "failed") throw new Error("Scene generation failed")
-    if (scene.video_clip_url) return scene
+    if (scene.video_clip_url && scene.generation_phase === "done") return scene
   }
 }
 
@@ -79,7 +80,7 @@ export default function StudioProjectPage() {
   const { id: projectId } = useParams<{ id: string }>()
 
   const [loading, setLoading] = useState(true)
-  const [character, setCharacter] = useState<Character | null>(null)
+  const [characters, setCharacters] = useState<Character[]>([])
   const [title, setTitle] = useState("Untitled Video")
   const [scenes, setScenes] = useState<LocalScene[]>([makeLocalScene()])
   const [voiceId, setVoiceId] = useState<string | null>(null)
@@ -126,12 +127,18 @@ export default function StudioProjectPage() {
 
         if (mapped.length > 0) setScenes(mapped)
 
-        const charId = project.character_id ?? project.characterId
-        if (charId) {
-          const charRes = await fetch(`/api/characters/${charId}`)
-          if (charRes.ok) {
-            const { character: char } = await charRes.json()
-            setCharacter(char)
+        // Load characters: prefer project.characters array (multi-char), fall back to single character_id
+        const projectChars: { character: Character }[] = project.characters ?? []
+        if (projectChars.length > 0) {
+          setCharacters(projectChars.map((pc) => pc.character))
+        } else {
+          const charId = project.character_id ?? project.characterId
+          if (charId) {
+            const charRes = await fetch(`/api/characters/${charId}`)
+            if (charRes.ok) {
+              const { character: char } = await charRes.json()
+              setCharacters([char])
+            }
           }
         }
 
@@ -189,7 +196,7 @@ export default function StudioProjectPage() {
       if (!res.ok) continue
       const { scene } = await res.json()
       if (scene.generation_phase === "failed") throw new Error("Scene generation failed")
-      if (scene.video_clip_url) return scene
+      if (scene.video_clip_url && scene.generation_phase === "done") return scene
     }
   }, [])
 
@@ -289,6 +296,14 @@ export default function StudioProjectPage() {
   }, [updateScene, runScene])
 
   const generateFinalVideo = useCallback(async () => {
+    const clipsWithoutAudio = scenes.filter((s) => s.videoClipUrl && !s.audioUrl).length
+    if (clipsWithoutAudio > 0) {
+      const total = scenes.filter((s) => s.videoClipUrl).length
+      const ok = window.confirm(
+        `${clipsWithoutAudio} of ${total} scene${total !== 1 ? "s" : ""} have no audio — those parts will be silent.\n\nContinue with silent gaps, or click Cancel to wait/regenerate?`
+      )
+      if (!ok) return
+    }
     setError(null)
     setStitching(true)
     try {
@@ -304,7 +319,7 @@ export default function StudioProjectPage() {
     } finally {
       setStitching(false)
     }
-  }, [projectId])
+  }, [projectId, scenes])
 
   const remaining = scenes.filter((s) => !s.videoClipUrl && s.description.trim())
   const allScenesHaveClips = scenes.length > 0 && scenes.every((s) => s.videoClipUrl)
@@ -318,28 +333,29 @@ export default function StudioProjectPage() {
         {/* Sidebar */}
         <aside className="hidden md:flex md:w-72 shrink-0 border-r border-zinc-200 bg-white flex-col overflow-y-auto">
           <div className="p-6 border-b border-zinc-100">
-            <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-4">Character</h2>
+            <h2 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide mb-4">
+              {characters.length > 1 ? "Characters" : "Character"}
+            </h2>
             {loading && <div className="h-40 rounded-xl bg-zinc-100 animate-pulse" />}
-            {!loading && !character && <p className="text-sm text-zinc-400">No character selected.</p>}
-            {character && (
-              <Card className="overflow-hidden">
-                {(character.selected_style_url || character.source_photo_url) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={character.selected_style_url ?? character.source_photo_url}
-                    alt={character.name}
-                    className="w-full h-40 object-cover"
-                    onError={(e) => {
-                      const img = e.currentTarget
-                      if (img.src !== character.source_photo_url && character.source_photo_url) img.src = character.source_photo_url
-                    }}
-                  />
-                )}
-                <CardContent className="p-4">
-                  <p className="font-semibold text-zinc-900">{character.name}</p>
-                  {character.lora_training_status && <p className="text-xs text-zinc-400 mt-1">LoRA: {character.lora_training_status}</p>}
-                </CardContent>
-              </Card>
+            {!loading && characters.length === 0 && <p className="text-sm text-zinc-400">No character selected.</p>}
+            {characters.length > 0 && (
+              <div className="space-y-3">
+                {characters.map((char) => {
+                  const imgUrl = char.selected_style_url ?? char.source_photo_url ?? null
+                  return (
+                    <Card key={char.id} className="overflow-hidden">
+                      {imgUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={imgUrl} alt={char.name} className="w-full h-28 object-cover" />
+                      )}
+                      <CardContent className="p-3">
+                        <p className="font-semibold text-zinc-900 text-sm">{char.name}</p>
+                        {char.lora_training_status && <p className="text-xs text-zinc-400 mt-0.5">LoRA: {char.lora_training_status}</p>}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
             )}
           </div>
 
@@ -401,69 +417,106 @@ export default function StudioProjectPage() {
             </div>
 
             <div className="hidden md:flex items-center gap-3 shrink-0">
+              {finalVideoUrl && (
+                <>
+                  <a
+                    href={finalVideoUrl}
+                    download
+                    className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                  >
+                    ↓ Landscape
+                  </a>
+                  <a
+                    href={`/api/projects/${projectId}/export?format=vertical`}
+                    download
+                    className="inline-flex items-center h-9 px-3 rounded-lg bg-violet-600 hover:bg-violet-700 text-white transition-colors text-sm font-medium"
+                  >
+                    ↓ Vertical 9:16
+                  </a>
+                </>
+              )}
               {!finalVideoUrl && remaining.length > 0 && (
                 <Button onClick={generateAllRemaining} disabled={generating || stitching || limitReached || scenes.every((s) => s.description.trim() === "")}>
                   {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
                 </Button>
               )}
             </div>
+            {/* Mobile header download — always visible when ready */}
+            {finalVideoUrl && (
+              <a href={finalVideoUrl} download
+                className="md:hidden inline-flex items-center h-9 px-3 rounded-lg bg-violet-600 text-white text-sm font-medium">
+                ↓ Download
+              </a>
+            )}
           </div>
 
-          {/* Final video player + export/share */}
+          {/* Final video player */}
           {finalVideoUrl && (
-            <>
-              <div className="bg-black shrink-0">
-                <video src={finalVideoUrl} controls className="max-h-64 mx-auto" />
-              </div>
-              <div className="bg-zinc-50 border-b border-zinc-200 px-4 md:px-8 py-4 shrink-0">
-                <div className="flex flex-wrap gap-6">
-                  {/* Download */}
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Download</p>
-                    <div className="flex flex-wrap gap-2">
-                      <a
-                        href={finalVideoUrl}
-                        download
-                        className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
-                      >
-                        Landscape 16:9
-                        <span className="text-xs font-normal text-zinc-400">YouTube · Facebook · X</span>
-                      </a>
-                      <a
-                        href={`/api/projects/${projectId}/export?format=vertical`}
-                        download
-                        className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
-                      >
-                        Vertical 9:16
-                        <span className="text-xs font-normal text-zinc-400">Shorts · Reels · TikTok</span>
-                      </a>
-                    </div>
-                  </div>
-                  {/* Share */}
-                  <div>
-                    <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Share link</p>
-                    <div className="flex flex-wrap gap-2">
-                      <a
-                        href={`https://twitter.com/intent/tweet?text=${encodeURIComponent("I made this AI cartoon video with @AtVeAnimation!")}&url=${encodeURIComponent(finalVideoUrl)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
-                      >
-                        X / Twitter
-                      </a>
-                      <a
-                        href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(finalVideoUrl)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
-                      >
-                        Facebook
-                      </a>
-                    </div>
+            <div className="bg-black shrink-0">
+              <video src={finalVideoUrl} controls className="max-h-64 mx-auto" />
+            </div>
+          )}
+
+          {/* Export + share — visible once all scenes are ready, enabled once final video exists */}
+          {(finalVideoUrl || allScenesHaveClips) && (
+            <div className="bg-zinc-50 border-b border-zinc-200 px-4 md:px-8 py-4 shrink-0">
+              {!finalVideoUrl && (
+                <p className="text-xs text-amber-600 font-medium mb-3">Generate your final video above to enable downloading and sharing.</p>
+              )}
+              <div className="flex flex-wrap gap-6">
+                {/* Download */}
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Download</p>
+                  <div className="flex flex-wrap gap-2">
+                    {finalVideoUrl ? (
+                      <>
+                        <a
+                          href={finalVideoUrl}
+                          download
+                          className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                        >
+                          Landscape 16:9
+                          <span className="text-xs font-normal text-zinc-400">YouTube · Facebook · X</span>
+                        </a>
+                        <a
+                          href={`/api/projects/${projectId}/export?format=vertical`}
+                          download
+                          className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-300 bg-white hover:bg-zinc-100 transition-colors text-sm font-medium text-zinc-800"
+                        >
+                          Vertical 9:16
+                          <span className="text-xs font-normal text-zinc-400">Shorts · Reels · TikTok</span>
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-400 cursor-not-allowed">
+                          Landscape 16:9
+                          <span className="text-xs font-normal text-zinc-300">YouTube · Facebook · X</span>
+                        </span>
+                        <span className="inline-flex flex-col items-start px-3 py-2 rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-400 cursor-not-allowed">
+                          Vertical 9:16
+                          <span className="text-xs font-normal text-zinc-300">Shorts · Reels · TikTok</span>
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
+                {/* Share */}
+                <div>
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide mb-2">Share</p>
+                  {finalVideoUrl ? (
+                    <ShareButtons url={finalVideoUrl} />
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      <span className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-400 cursor-not-allowed">Copy link</span>
+                      <span className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-400 cursor-not-allowed">WhatsApp</span>
+                      <span className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-400 cursor-not-allowed">X / Twitter</span>
+                      <span className="inline-flex items-center h-9 px-3 rounded-lg border border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-400 cursor-not-allowed">Facebook</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* Progress */}
@@ -519,7 +572,7 @@ export default function StudioProjectPage() {
                 index={index}
                 scene={scene}
                 disabled={generating || stitching}
-                characterId={character?.id ?? null}
+                characterId={characters[0]?.id ?? null}
                 onUpdate={(patch) => updateScene(index, patch)}
                 onDelete={() => deleteScene(index)}
                 onGenerate={() => generateOne(index)}
@@ -539,31 +592,50 @@ export default function StudioProjectPage() {
           </div>
 
           {/* Mobile bottom bar */}
-          {!finalVideoUrl && (
-            <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-zinc-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
-              {sceneQuota && (
-                <p className={`text-xs text-center mb-2 ${limitReached ? "text-red-500 font-medium" : sceneQuota.unlimited ? "text-violet-600 font-medium" : "text-zinc-400"}`}>
-                  {sceneQuota.unlimited
-                    ? "Unlimited scenes · Super User"
-                    : limitReached
-                    ? "Daily limit reached · resets midnight UTC"
-                    : `${(sceneQuota.limit ?? 0) - sceneQuota.used} of ${sceneQuota.limit} scenes remaining today`}
-                </p>
-              )}
+          <div className="md:hidden fixed bottom-0 left-0 right-0 z-20 bg-white border-t border-zinc-200 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            {finalVideoUrl ? (
               <div className="flex gap-2">
-                {allScenesHaveClips ? (
-                  <Button onClick={generateFinalVideo} disabled={stitching} className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1.5">
-                    <PlayIcon className="w-4 h-4 shrink-0" />
-                    {stitching ? "Stitching..." : "Generate Final Video"}
-                  </Button>
-                ) : remaining.length > 0 ? (
-                  <Button onClick={generateAllRemaining} disabled={generating || stitching || limitReached} className="flex-1">
-                    {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
-                  </Button>
-                ) : null}
+                <a
+                  href={finalVideoUrl}
+                  download
+                  className="flex-1 inline-flex justify-center items-center h-10 rounded-md border border-zinc-300 bg-white text-sm font-medium text-zinc-800 hover:bg-zinc-100 transition-colors"
+                >
+                  ↓ Landscape
+                </a>
+                <a
+                  href={`/api/projects/${projectId}/export?format=vertical`}
+                  download
+                  className="flex-1 inline-flex justify-center items-center h-10 rounded-md border border-zinc-300 bg-white text-sm font-medium text-zinc-800 hover:bg-zinc-100 transition-colors"
+                >
+                  ↓ Vertical 9:16
+                </a>
               </div>
-            </div>
-          )}
+            ) : (
+              <>
+                {sceneQuota && (
+                  <p className={`text-xs text-center mb-2 ${limitReached ? "text-red-500 font-medium" : sceneQuota.unlimited ? "text-violet-600 font-medium" : "text-zinc-400"}`}>
+                    {sceneQuota.unlimited
+                      ? "Unlimited scenes · Super User"
+                      : limitReached
+                      ? "Daily limit reached · resets midnight UTC"
+                      : `${(sceneQuota.limit ?? 0) - sceneQuota.used} of ${sceneQuota.limit} scenes remaining today`}
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  {allScenesHaveClips ? (
+                    <Button onClick={generateFinalVideo} disabled={stitching} className="flex-1 bg-green-600 hover:bg-green-700 text-white gap-1.5">
+                      <PlayIcon className="w-4 h-4 shrink-0" />
+                      {stitching ? "Stitching..." : "Generate Final Video"}
+                    </Button>
+                  ) : remaining.length > 0 ? (
+                    <Button onClick={generateAllRemaining} disabled={generating || stitching || limitReached} className="flex-1">
+                      {generating ? "Generating..." : `Generate ${remaining.length} Scene${remaining.length !== 1 ? "s" : ""}`}
+                    </Button>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </div>
         </main>
       </div>
     </div>

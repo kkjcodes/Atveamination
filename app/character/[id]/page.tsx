@@ -10,9 +10,11 @@ import DeleteButton from "@/components/delete-button"
 import AugmentAndTrainButton from "@/components/augment-and-train-button"
 import CharacterDescriptionEditor from "@/components/character-description-editor"
 import CharacterNameEditor from "@/components/character-name-editor"
+import MakeVideoButton from "@/components/make-video-button"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
+import { PRESET_VOICES } from "@/lib/fal/client"
 
 type TrainingStatus = "pending" | "processing" | "succeeded" | "failed" | "canceled"
 
@@ -63,7 +65,11 @@ export default async function CharacterPage({
 
   const status = character.loraTrainingStatus as TrainingStatus | null
   const trainingDone = status === "succeeded"
-  const voiceStyle = (voice?.ttsParams as Record<string, string> | null)?.style
+  const canMakeVideo = !!character.selectedStyleUrl
+  const kokoroVoiceId = (voice?.ttsParams as { kokoroVoice?: string } | null)?.kokoroVoice
+  const voiceLabel = kokoroVoiceId
+    ? (PRESET_VOICES.find((v) => v.id === kokoroVoiceId)?.label ?? kokoroVoiceId)
+    : voice?.sampleAudioUrl ? "Custom recording" : null
   const augmentedCount = Array.isArray(character.trainingImages)
     ? (character.trainingImages as unknown[]).length
     : 0
@@ -100,19 +106,11 @@ export default async function CharacterPage({
               className="text-zinc-400 hover:text-red-500 hover:bg-red-50"
             />
             {status === "failed" && <RetrainButton characterId={id} />}
-            <Button
-              asChild={trainingDone}
-              size="lg"
-              disabled={!trainingDone}
-            >
-              {trainingDone ? (
-                <Link href={`/studio/new?character=${id}${voice ? `&voice=${voice.id}` : ""}`}>
-                  Create Video
-                </Link>
-              ) : (
-                <span>Create Video</span>
-              )}
-            </Button>
+            <MakeVideoButton
+              characterId={id}
+              voiceId={voice?.id ?? null}
+              disabled={!canMakeVideo}
+            />
           </div>
         </div>
 
@@ -185,7 +183,7 @@ export default async function CharacterPage({
                   <div>
                     <p className="text-sm font-medium text-zinc-900">Voice</p>
                     <p className="text-xs text-zinc-500 mt-0.5">
-                      Style: <span className="capitalize">{voiceStyle ?? "custom"}</span> · Voice sample recorded
+                      {voiceLabel ?? "Voice configured"}
                     </p>
                   </div>
                   <Button asChild variant="outline" size="sm" className="shrink-0">

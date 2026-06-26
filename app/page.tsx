@@ -7,16 +7,25 @@ import Nav from "@/components/nav"
 import { useState, useRef } from "react"
 
 const styles = [
-  { src: "/landing/image0.png", label: "Comic · Pixar · Anime · Sketch" },
-  { src: "/landing/image1.png", label: "Pixar · Anime · Sketch · Comic" },
+  { src: "/landing/image0.png", label: "Pixar · Anime · Ghibli · Chibi" },
+  { src: "/landing/image1.png", label: "Comic · Sketch · Watercolor · Claymation" },
   { src: "/landing/image2.png", label: "Anime · Pixar · Sketch · Comic" },
 ]
 
 const steps = [
-  { step: "01", title: "Upload Your Photo", description: "One clear selfie. Our AI builds a personalised cartoon model of you in minutes." },
-  { step: "02", title: "Pick a Style",       description: "Pixar 3D, Anime, Comic Book, Pencil Sketch — preview all four before you choose." },
-  { step: "03", title: "Clone Your Voice",   description: "Record 30 seconds of speech. Your cartoon narrates in your actual voice." },
-  { step: "04", title: "Generate & Share",   description: "Write your scenes, hit generate, get a fully animated MP4 — ready to share." },
+  { step: "01", emoji: "📸", title: "Upload Your Photo", description: "One clear selfie — our AI builds a personalised cartoon character in minutes. Do it for everyone in your crew." },
+  { step: "02", emoji: "🎨", title: "Pick a Style",       description: "Choose from 8 cartoon styles: Pixar 3D, Anime, Ghibli, Chibi, Comic, Sketch, Watercolor, Claymation." },
+  { step: "03", emoji: "🎙️", title: "Skip the voice setup", description: "We auto-match a voice to your character — no recording, no setup. Or record 30 seconds of your own voice if you'd rather." },
+  { step: "04", emoji: "🎬", title: "Generate & Share",   description: "Pick a preset scene or let AI write the script. Hit generate, get an animated MP4 — share instantly." },
+]
+
+const useCases = [
+  { emoji: "👨‍👩‍👧‍👦", title: "Family Adventures", desc: "Put the whole family in a cartoon together. Kids go wild when they see mum and dad as Pixar characters." },
+  { emoji: "💑",         title: "Couple Moments",   desc: "Surprise your partner with an animated version of your favourite memory. Way better than a meme." },
+  { emoji: "🎂",         title: "Birthday Wishes",  desc: "Send a cartoon birthday message starring you — or the whole friend group. Way more memorable than a text." },
+  { emoji: "📱",         title: "Viral Social Content", desc: "Animated Reels and TikToks that stop the scroll. Your face, your crew, your story." },
+  { emoji: "📚",         title: "Kids' Story Time", desc: "Become a cartoon character in bedtime stories your kids will beg to watch again and again." },
+  { emoji: "🎉",         title: "Group Celebrations", desc: "Holidays, graduations, weddings — animate the whole group and share the video in the group chat." },
 ]
 
 function VideoCard({ src, label, poster }: { src: string; label: string; poster: string }) {
@@ -67,32 +76,35 @@ export default function LandingPage() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-500/20 via-transparent to-transparent" />
         <div className="relative mx-auto max-w-3xl">
 
-          {/* Free badge */}
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-5 py-2 text-sm font-semibold text-emerald-300">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            100% Free · No credit card · No waitlist
+            100% Free · No Waitlist · Start in Seconds
           </div>
 
           <h1 className="mb-4 text-5xl font-black tracking-tight sm:text-7xl leading-tight">
-            Your Personal AI Cartoon Studio,{" "}
+            Cartoon Videos{" "}
             <span className="bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
               Starring You
             </span>
+            <br />& Your Whole Crew
           </h1>
 
           <p className="mx-auto mb-4 max-w-xl text-lg text-violet-200">
-            Upload one photo, clone your voice, write a scene — get a fully animated,
-            narrated cartoon video. No editing skills required.
+            Upload a photo, pick a cartoon style, write a scene — get a fully animated video in minutes.
+            Add family, friends, or your partner for videos everyone will want to share.
           </p>
 
-          {/* Free scenes callout */}
-          <div className="mx-auto mb-8 inline-flex items-center gap-2 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-5 py-2.5 text-sm font-medium text-yellow-200">
-            🎬 <strong className="text-yellow-300">10 free scenes every day.</strong>&nbsp;20 AI scripts. 3 characters for life.
+          <div className="mx-auto mb-8 inline-flex flex-wrap justify-center items-center gap-x-3 gap-y-1 rounded-xl border border-yellow-400/30 bg-yellow-400/10 px-5 py-2.5 text-sm font-medium text-yellow-200">
+            🎬 <strong className="text-yellow-300">10 free scenes every day.</strong>
+            <span className="text-yellow-400/60">·</span>
+            <span>8 cartoon styles.</span>
+            <span className="text-yellow-400/60">·</span>
+            <span>Up to 4 characters per video.</span>
           </div>
 
           <div className="flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
             <Button asChild size="lg" className="bg-white text-violet-700 hover:bg-violet-50 font-bold shadow-lg px-8 text-base">
-              <Link href="/auth/signup">Start Free — No Card Needed</Link>
+              <Link href="/auth/signup">Make Your First Cartoon — Free</Link>
             </Button>
             <Button asChild size="lg" variant="outline" className="border-white/30 bg-white/10 text-white hover:bg-white/20 text-base">
               <Link href="/auth/login">Sign In</Link>
@@ -100,36 +112,34 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Hero showcase — framed sample card */}
+        {/* Hero showcase */}
         <div className="relative mx-auto mt-14 max-w-lg rounded-2xl border border-white/20 bg-white/5 backdrop-blur-sm overflow-hidden shadow-2xl">
-          {/* Card header */}
           <div className="px-6 py-5 border-b border-white/10 text-center">
-            <p className="text-xs font-semibold uppercase tracking-widest text-violet-300 mb-1">4 Cartoon Styles</p>
-            <p className="text-lg font-bold text-white">See What&apos;s Possible</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-violet-300 mb-1">8 Cartoon Styles</p>
+            <p className="text-lg font-bold text-white">One Photo. Endless Possibilities.</p>
             <p className="text-sm text-violet-200/80 mt-1">
               Every style below was generated from a single uploaded photo — no design skills needed.
             </p>
           </div>
 
-          {/* Images */}
           <div className="p-4 space-y-3">
             <div className="relative overflow-hidden rounded-xl shadow-lg">
               <Image
                 src="/landing/Images.jpeg"
-                alt="One photo transformed into four cartoon styles"
+                alt="One photo transformed into eight cartoon styles"
                 width={600}
                 height={680}
                 className="w-full"
                 priority
               />
               <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent px-4 py-3">
-                <p className="text-xs font-medium text-white/80">One photo → 4 cartoon styles</p>
+                <p className="text-xs font-medium text-white/80">One photo → 8 cartoon styles</p>
               </div>
             </div>
             <div className="relative overflow-hidden rounded-xl shadow-lg">
               <Image
                 src="/landing/Babu.png"
-                alt="Another photo transformed into cartoon styles"
+                alt="Your photo transformed into your cartoon character"
                 width={720}
                 height={540}
                 className="w-full object-cover"
@@ -141,10 +151,9 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Card footer CTA */}
           <div className="px-6 py-4 border-t border-white/10 text-center">
             <p className="text-xs text-violet-300/70">
-              Pixar 3D · Anime · Comic Book · Pencil Sketch — pick the style that fits your story
+              Pixar · Anime · Ghibli · Chibi · Comic · Sketch · Watercolor · Claymation
             </p>
           </div>
         </div>
@@ -153,19 +162,57 @@ export default function LandingPage() {
       {/* ── Free tier highlight ───────────────────────────────────────────── */}
       <section className="bg-emerald-50 border-y border-emerald-100 px-6 py-12">
         <div className="mx-auto max-w-4xl">
-          <p className="mb-6 text-center text-sm font-semibold uppercase tracking-widest text-emerald-600">What you get for free, every day</p>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <p className="mb-6 text-center text-sm font-semibold uppercase tracking-widest text-emerald-600">Everything you get for free</p>
+          <div className="grid gap-4 sm:grid-cols-4">
             {[
-              { n: "10", label: "Scenes generated", sub: "Resets at midnight UTC" },
-              { n: "20", label: "AI scripts written", sub: "Claude writes your story" },
-              { n: "3",  label: "Characters for life", sub: "Train your cartoon once, use forever" },
+              { n: "10", label: "Scenes/day", sub: "Resets at midnight" },
+              { n: "20", label: "AI scripts/day", sub: "Claude writes your story" },
+              { n: "10", label: "Characters for life", sub: "Train once, use forever" },
+              { n: "8",  label: "Cartoon styles", sub: "Pick what you love" },
             ].map(({ n, label, sub }) => (
-              <div key={n} className="flex flex-col items-center rounded-2xl bg-white border border-emerald-100 px-6 py-8 shadow-sm text-center">
-                <span className="text-5xl font-black text-emerald-500">{n}</span>
-                <span className="mt-1 font-semibold text-zinc-800">{label}</span>
+              <div key={label} className="flex flex-col items-center rounded-2xl bg-white border border-emerald-100 px-5 py-7 shadow-sm text-center">
+                <span className="text-4xl font-black text-emerald-500">{n}</span>
+                <span className="mt-1 font-semibold text-zinc-800 text-sm">{label}</span>
                 <span className="mt-1 text-xs text-zinc-400">{sub}</span>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Multi-character callout ───────────────────────────────────────── */}
+      <section className="px-6 py-20 bg-gradient-to-br from-orange-50 to-yellow-50">
+        <div className="mx-auto max-w-4xl">
+          <div className="text-center mb-12">
+            <p className="text-xs font-semibold uppercase tracking-widest text-orange-500 mb-3">New · Multi-Character Videos</p>
+            <h2 className="text-3xl font-bold text-zinc-900 mb-3">
+              Bring your whole crew into the cartoon
+            </h2>
+            <p className="text-zinc-500 max-w-xl mx-auto">
+              Add up to 4 characters per video — family members, your partner, friends.
+              Each character speaks in their own voice. The AI writes scenes that feature everyone
+              and figures out who's talking. No extra setup, no approval gates.
+            </p>
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-3">
+            {[
+              { emoji: "👨‍👩‍👧", title: "Families", desc: "Mum, dad, and the kids in one animated adventure. Pick a preset scene or let AI write it." },
+              { emoji: "💑",     title: "Couples",  desc: "A surprise cartoon for your anniversary, birthday, or just because. They'll love it." },
+              { emoji: "🫂",     title: "Friends",  desc: "The whole friend group in a birthday video, a holiday memory, or a totally random adventure." },
+            ].map(({ emoji, title, desc }) => (
+              <div key={title} className="rounded-2xl bg-white border border-orange-100 p-7 shadow-sm text-center hover:shadow-md transition-shadow">
+                <div className="text-4xl mb-3">{emoji}</div>
+                <h3 className="font-bold text-zinc-900 mb-2">{title}</h3>
+                <p className="text-sm text-zinc-500 leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-10 text-center">
+            <Button asChild size="lg" className="bg-orange-500 hover:bg-orange-600 text-white font-bold px-8 shadow-lg">
+              <Link href="/auth/signup">Make a Family Video — Free</Link>
+            </Button>
           </div>
         </div>
       </section>
@@ -175,10 +222,9 @@ export default function LandingPage() {
         <div className="mx-auto max-w-5xl">
           <div className="mb-12 text-center">
             <h2 className="mb-2 text-3xl font-bold text-white">See it in action</h2>
-            <p className="text-zinc-400">Real videos generated by the platform</p>
+            <p className="text-zinc-400">Real videos generated on the platform</p>
           </div>
 
-          {/* Featured video */}
           <div className="mb-6">
             <div className="mb-3 flex items-center gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-500/20 border border-violet-500/30 px-3 py-1 text-xs font-semibold text-violet-300 uppercase tracking-wider">
@@ -189,7 +235,6 @@ export default function LandingPage() {
             <VideoCard src="/landing/atharv_video.mp4" poster="/landing/atharv_poster.jpg" label="Watch" />
           </div>
 
-          {/* Secondary clips */}
           <div className="grid gap-6 sm:grid-cols-2">
             <VideoCard src="/landing/shop.mp4"  poster="/landing/shop_poster.jpg"  label="Watch clip" />
             <VideoCard src="/landing/video.mp4" poster="/landing/video_poster.jpg" label="Watch clip" />
@@ -201,9 +246,19 @@ export default function LandingPage() {
       <section className="px-6 py-20">
         <div className="mx-auto max-w-5xl">
           <div className="mb-12 text-center">
-            <h2 className="mb-2 text-3xl font-bold text-zinc-900">Four styles. Your face. Instant.</h2>
-            <p className="text-zinc-500">Every style is generated from a single uploaded photo</p>
+            <h2 className="mb-2 text-3xl font-bold text-zinc-900">8 styles. Your face. Your vibe.</h2>
+            <p className="text-zinc-500">Every style generated from a single photo — swap anytime</p>
           </div>
+
+          {/* Style name pills */}
+          <div className="flex flex-wrap justify-center gap-2 mb-10">
+            {["Pixar 3D", "Anime", "Studio Ghibli", "Chibi", "Comic Book", "Pencil Sketch", "Watercolor", "Claymation"].map((s) => (
+              <span key={s} className="rounded-full border border-violet-200 bg-violet-50 px-4 py-1.5 text-sm font-medium text-violet-700">
+                {s}
+              </span>
+            ))}
+          </div>
+
           <div className="grid gap-6 sm:grid-cols-3">
             {styles.map(({ src, label }) => (
               <div key={src} className="group overflow-hidden rounded-2xl border border-zinc-100 shadow-md hover:shadow-xl transition-shadow">
@@ -220,24 +275,75 @@ export default function LandingPage() {
               </div>
             ))}
           </div>
+
+          <div className="mt-10 text-center">
+            <Button asChild size="lg" className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-8">
+              <Link href="/auth/signup">Try All 8 Styles Free</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Preset scenes callout ─────────────────────────────────────────── */}
+      <section className="bg-violet-50 border-y border-violet-100 px-6 py-16">
+        <div className="mx-auto max-w-4xl text-center">
+          <p className="text-xs font-semibold uppercase tracking-widest text-violet-500 mb-3">20 Ready-Made Scenes</p>
+          <h2 className="text-2xl font-bold text-zinc-900 mb-3">No script? No problem.</h2>
+          <p className="text-zinc-500 max-w-xl mx-auto mb-8">
+            Pick from 20 curated scenes — Morning Coffee, City Stroll, Birthday Party, Mountain Summit,
+            and more. One tap and the AI generates the video. Or write your own scene from scratch.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {["☕ Morning Coffee", "🎂 Birthday Party", "🏔️ Mountain Summit", "🌊 Underwater Adventure", "🚀 Rocket Launch", "🌅 Beach Sunset", "🎉 New Year", "🤝 Best Friends"].map((tag) => (
+              <span key={tag} className="rounded-full bg-white border border-violet-200 px-4 py-1.5 text-sm text-violet-700 font-medium shadow-sm">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
       {/* ── How it works ──────────────────────────────────────────────────── */}
-      <section className="bg-violet-50 px-6 py-20">
+      <section className="bg-white px-6 py-20">
         <div className="mx-auto max-w-5xl">
           <div className="mb-14 text-center">
             <h2 className="mb-2 text-3xl font-bold text-zinc-900">How it works</h2>
-            <p className="text-zinc-500">Four steps from photo to finished video</p>
+            <p className="text-zinc-500">Photo to finished video in under 10 minutes</p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {steps.map((s) => (
-              <div key={s.step} className="rounded-2xl bg-white border border-violet-100 p-6 shadow-sm">
-                <div className="mb-4 text-4xl font-black text-violet-100">{s.step}</div>
-                <h3 className="mb-2 font-semibold text-zinc-900">{s.title}</h3>
+              <div key={s.step} className="rounded-2xl bg-zinc-50 border border-zinc-100 p-6 shadow-sm hover:border-violet-200 hover:bg-violet-50/30 transition-colors">
+                <div className="mb-3 text-3xl">{s.emoji}</div>
+                <div className="mb-2 text-xs font-bold text-violet-400 tracking-widest">{s.step}</div>
+                <h3 className="mb-2 font-bold text-zinc-900">{s.title}</h3>
                 <p className="text-sm text-zinc-500 leading-relaxed">{s.description}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Use cases ────────────────────────────────────────────────────── */}
+      <section className="px-6 py-20 bg-zinc-50">
+        <div className="mx-auto max-w-5xl">
+          <div className="mb-12 text-center">
+            <p className="text-xs font-semibold uppercase tracking-widest text-violet-500 mb-3">For Everyone</p>
+            <h2 className="text-3xl font-bold text-zinc-900">What will you make?</h2>
+            <p className="mt-2 text-zinc-500">Solo videos, family adventures, couple moments — it all works.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {useCases.map(({ emoji, title, desc }) => (
+              <div key={title} className="rounded-2xl border border-zinc-200 bg-white p-6 hover:border-violet-200 hover:shadow-md transition-all">
+                <div className="text-3xl mb-3">{emoji}</div>
+                <h3 className="font-bold text-zinc-900 mb-1">{title}</h3>
+                <p className="text-sm text-zinc-500 leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-10 text-center">
+            <Button asChild size="lg" className="bg-violet-600 hover:bg-violet-700 text-white font-bold px-8">
+              <Link href="/auth/signup">Start Free — Make Something Fun</Link>
+            </Button>
           </div>
         </div>
       </section>
@@ -246,11 +352,9 @@ export default function LandingPage() {
       <section className="px-6 py-16 bg-white border-y border-zinc-100">
         <div className="mx-auto max-w-3xl text-center">
           <p className="text-xs font-semibold uppercase tracking-widest text-violet-500 mb-3">Always Improving</p>
-          <h2 className="text-2xl font-bold text-zinc-900 mb-3">
-            This is just the beginning
-          </h2>
+          <h2 className="text-2xl font-bold text-zinc-900 mb-3">This is just the beginning</h2>
           <p className="text-zinc-500 leading-relaxed max-w-xl mx-auto">
-            We ship new features regularly — lip sync, longer videos, episodic content, and more are all on the roadmap.
+            We ship new features regularly — longer videos, more styles, episodic content, and more are on the way.
             If there&apos;s something you&apos;d love to see, we want to hear about it.
           </p>
           <a
@@ -276,9 +380,11 @@ export default function LandingPage() {
           <h2 className="mb-4 text-4xl font-black leading-tight">
             Your cartoon video is<br />10 minutes away.
           </h2>
-          <p className="mb-8 text-violet-200">
-            No studio. No editing skills. No credit card.
-            Just your face, your voice, and a story to tell.
+          <p className="mb-2 text-violet-200 text-lg">
+            Just your face, a story to tell, and whoever you want in it.
+          </p>
+          <p className="mb-8 text-violet-300/70 text-sm">
+            Solo, with your partner, with the whole family — it all works.
           </p>
           <Button asChild size="lg" className="bg-white text-violet-700 hover:bg-violet-50 font-bold px-10 text-base shadow-xl">
             <Link href="/auth/signup">Create Your First Video — Free</Link>

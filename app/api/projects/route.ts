@@ -8,19 +8,35 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
 
-  const { character_id, voice_id, title } = await req.json()
+  const { character_id, character_ids, voice_id, title } = await req.json()
 
-  if (!character_id) {
-    return NextResponse.json({ error: "character_id is required" }, { status: 400 })
+  // Normalize: accept either character_id (single) or character_ids (multi)
+  const ids: string[] = character_ids?.length
+    ? character_ids
+    : character_id
+      ? [character_id]
+      : []
+
+  if (ids.length === 0) {
+    return NextResponse.json({ error: "character_id or character_ids is required" }, { status: 400 })
+  }
+
+  // Verify all characters belong to the user
+  const chars = await prisma.character.findMany({ where: { id: { in: ids }, userId }, select: { id: true } })
+  if (chars.length !== ids.length) {
+    return NextResponse.json({ error: "One or more characters not found" }, { status: 404 })
   }
 
   const project = await prisma.project.create({
     data: {
       userId,
-      characterId: character_id,
+      characterId: ids[0],
       voiceId: voice_id ?? null,
       title: title ?? "Untitled Video",
       status: "pending",
+      characters: {
+        create: ids.map((id, i) => ({ characterId: id, orderIndex: i })),
+      },
     },
   })
 

@@ -14,19 +14,22 @@ Upload a photo → pick a cartoon style → clone your voice → write scenes wi
 
 Most "AI video" tools paste a stock avatar over a slide deck. This is different.
 
-**Step 1 — Identity training.** A user uploads one photo. The system fine-tunes a Flux LoRA adapter specifically on their face — trained on Replicate's H100 fleet, weights stored privately per user. Every subsequent image generated for that user uses their personal LoRA, so their character looks like *them* across every scene.
+**Step 1 — Identity capture.** A user uploads one photo. EXIF orientation is baked into the pixel data on ingest (iPhone selfies arrive sideways at every downstream model otherwise). Claude Sonnet writes a structured visual description of the person — culture-neutral, only what's actually in the frame. That description is then carried into every prompt for that user.
 
-**Step 2 — Style transfer.** FLUX Kontext Pro transforms the LoRA-anchored portrait into any cartoon style (Pixar 3D, anime, comic book, pencil sketch). The style runs on the original photo as an edit operation, not a generation from scratch — this is key to preserving identity while changing aesthetic.
+**Step 2 — Style transfer.** FLUX Kontext Pro transforms the source photo into the user's chosen cartoon style (Pixar 3D, anime, Studio Ghibli, comic book, pencil sketch, watercolor, claymation, chibi). The style runs on the original photo as an edit operation, with the Sonnet description anchoring identity. This is key to preserving the user's actual face while changing aesthetic.
 
-**Step 3 — Voice cloning.** The user records 30 seconds of speech in the browser via the Web MediaRecorder API. XTTS-v2 on Replicate trains a speaker embedding from that recording. All narration is then synthesized in the user's actual voice.
+**Step 3 — LoRA training.** 35 augmented variations of the cartoon character (20 pose/expression edits + 15 face-anchored variations generated directly from the source selfie) plus 5 copies of the original photo are zipped and sent to fal.ai's flux-lora-fast-training endpoint. Training takes 10–15 minutes per character. The trained LoRA is mirrored to Azure Blob so URLs never expire on us. Every later scene with that character is generated through this LoRA.
 
-**Step 4 — Scene generation.** Each scene goes through a four-stage async pipeline:
-1. Flux Kontext Pro → 1280×720 keyframe anchored to the character's LoRA
-2. WAN 2.1 I2V (fal.ai) → 5/10/15-second animated video clip from the keyframe
-3. XTTS-v2 → voice-cloned narration audio
-4. FFmpeg → audio-video merge with atempo speed correction, then Azure Blob upload
+**Step 4 — Voice.** Claude vision reads the cartoon style image and auto-picks a matching Kokoro voice (male or female, neutral accent). Users can override with a recorded 30-second sample (XTTS-v2 on Replicate) if they want their literal voice — but the auto-pick path means no recording step is required to get a video.
 
-**Step 5 — Final video.** FFmpeg concatenates all scene clips into one downloadable MP4.
+**Step 5 — Scene generation.** Each scene routes through one of three paths depending on cast:
+1. **Solo scene** — fal-ai/flux-lora with the character's trigger word
+2. **Anchor scene** (one focused character, scene > 0) — FLUX Kontext Pro anchored to scene 0's image
+3. **Shared scene** (multiple characters in the frame) — fal-ai/flux-pro/kontext/multi with an explicit cast prompt: per-character labels bound to reference images, with an anti-duplication constraint
+
+Once the keyframe is ready, WAN 2.1 I2V (fal.ai) generates a 5-second animated video and Kokoro generates per-character TTS audio in parallel. FFmpeg merges video + audio per scene, with the output clipped to `min(videoDuration, audioDuration + 0.5s)` so short voice lines don't leave dead silence at the tail.
+
+**Step 6 — Final video.** FFmpeg concatenates all scene clips into one downloadable MP4.
 
 ---
 
@@ -35,11 +38,20 @@ Most "AI video" tools paste a stock avatar over a slide deck. This is different.
 ### Character consistency across scenes
 The biggest unsolved problem in AI video is identity drift — characters look different in every frame. The fix here is non-trivial: every keyframe generation re-injects the user's LoRA weights AND anchors the prompt to the first scene's output. Subsequent scenes are generated as edits of the first, not independent generations. Result: a character that actually looks like the same person across a 5-scene video.
 
+### Multi-character scenes without duplication
+Single-LoRA inference can only produce one trained character. When the scene description asks for "Kumar proposes to Kirti," loading Kumar's LoRA renders both subjects as Kumar — the same face fills every slot in the prompt. Multi-Kontext (fal-ai/flux-pro/kontext/multi) takes distinct reference images, but the model needs explicit binding or it picks one reference and renders both subjects from it. The fix is a server-side prompt builder that emits an explicit cast block (`Character A from reference image 1: Kumar — <description>`), an anti-duplication clause, and a relational-cue detector that auto-routes scenes containing "they embrace" or "approaching figure" to Multi-Kontext even when no character names appear in the description.
+
+### Identity preservation through the training pipeline
+A LoRA learns whatever's in the training zip. If the augmentation step subtly darkens skin tone or adds facial hair, the LoRA learns the drift as identity — and every generated frame has it baked in. The fix is structural: the training set is 35 cartoon variations PLUS 5 copies of the original photo (counterbalancing the cartoon-side darkening), the Sonnet description is culture-neutral (the earlier prompt that enumerated bindi/sindoor/tilak caused Kontext Pro to hallucinate them onto every face, regardless of source), and EXIF orientation is normalized on upload (iPhone selfies with `orientation=6` rendered sideways through Kontext Pro, which consistently misinterpreted them as a reclining female figure with long hair — producing the wrong-gender cartoon from a male source).
+
+### Per-character voice attribution
+A multi-character video has alternating speakers. With a single project voice, Kumar's lines and Kirti's lines all play in the same voice — and lip sync (LatentSync) tries to sync the audio to one face, leaving the other character's mouth animating silently from raw WAN motion. The fix: every character gets their own voice (Claude vision auto-picks gender from the style image), the brief LLM tags each scene with a `speaker` field, and the scene-save endpoint resolves speaker name to a character ID server-side. When the caller omits the speaker, a fallback heuristic infers it from the voiceScript text ("Heather, will you marry me?" → Matt is the speaker, since Heather is the one being addressed). LatentSync is skipped entirely on shared scenes — its single-face limitation creates more glitches than it fixes.
+
 ### Synchronizing three async ML pipelines
 Image generation (Replicate), video synthesis (fal.ai), and TTS (Replicate) all run on separate infrastructure with different APIs, rate limits, and failure modes. The polling engine in `app/api/scenes/[id]/route.ts` fans these out in parallel after the image completes, waits for both video and audio, then stitches them — without blocking the Next.js server thread. A single scene polls across three external systems in one GET handler.
 
 ### Audio-video duration alignment
-WAN I2V generates video to an approximate target duration. XTTS-v2 generates audio based on text length. These almost never match. The FFmpeg pipeline probes both durations and applies an `atempo` filter chain (clamped to [0.5, 2.0] per pass, chained for speeds > 2×) to speed the audio to match the video. This runs in-process inside the container using ffmpeg-static binaries — no subprocess spawning, no external service.
+WAN I2V emits 6-second clips. Kokoro generates audio sized to the text — short voice lines like "Yes!" come back at 3 seconds. Padding the video to 6 seconds leaves dead air at the tail of every scene, which compounds across a 4-scene video into 10+ seconds of silent transitions. The FFmpeg pipeline probes both durations and trims each merged scene to `min(videoDuration, audioDuration + 0.5s)` — the half-second buffer gives a visual outro without leaving silence. When audio actually is longer than video (rare, but possible on long narration), the `atempo` filter chain (clamped to [0.5, 2.0] per pass, chained for speeds > 2×) speeds the audio to match. This all runs in-process inside the container using ffmpeg-static binaries — no subprocess spawning, no external service.
 
 ### Running FFmpeg in a Turbopack/Next.js standalone bundle
 Turbopack rewrites `__dirname` to `/ROOT` in the production bundle. Both `ffmpeg-static` and `ffprobe-static` use `__dirname` to locate their binaries — so they silently resolve to paths that don't exist at runtime. The fix: bypass the package exports entirely and construct binary paths from `process.cwd()` at runtime. Also: `lavfi` (used to generate silence for scenes without audio) is not compiled into the static FFmpeg binary. Replaced with a Node.js PCM WAV writer that generates valid silence without any FFmpeg format dependency.
@@ -58,11 +70,23 @@ Per scene, per output second of finished video:
 
 | Component | Model | Cost per 5s scene |
 |---|---|---|
-| Keyframe image | FLUX Kontext Pro (Replicate) | ~$0.04 |
+| Keyframe image (solo / anchor) | FLUX Kontext Pro (Replicate) | ~$0.04 |
+| Keyframe image (LoRA) | fal-ai/flux-lora (fal.ai) | ~$0.04 |
+| Keyframe image (multi-character) | flux-pro/kontext/multi (fal.ai) | ~$0.05 |
 | Video clip | WAN 2.1 I2V 720p (fal.ai) | ~$0.50 |
-| Voice narration | XTTS-v2 (Replicate) | ~$0.01 |
+| Voice narration | Kokoro TTS (fal.ai) | <$0.005 |
 | Content moderation + rewriting | Claude Haiku (Anthropic) | <$0.001 |
 | **Total per scene** | | **~$0.55** |
+
+Per character (one-time setup):
+
+| Component | Model | Cost |
+|---|---|---|
+| Character description (vision) | Claude Sonnet 4.6 | ~$0.015 |
+| Style transfer (4 cartoon styles) | FLUX Kontext Pro × 4 | ~$0.16 |
+| Training augmentation (35 images) | FLUX Kontext Pro × 35 | ~$1.40 |
+| LoRA training | flux-lora-fast-training (fal.ai) | ~$0.40 |
+| **Total per character** | | **~$2.00** |
 
 **~$0.11 per second of final video output** (~$6.60/min of finished video).
 
@@ -87,18 +111,27 @@ Infrastructure is ~$30–50/month fixed, amortized across users.
 │           Next.js 16 App Router — Azure Container Apps                   │
 │           1 vCPU / 2 GiB RAM  ·  minReplicas: 0  ·  maxReplicas: 3      │
 │                                                                          │
-│  POST /api/characters/:id/train      → Flux LoRA trainer (Replicate)    │
-│  POST /api/characters/:id/augment    → Flux Kontext Pro (style xfer)    │
-│  POST /api/scenes/:id/generate       → Flux Kontext Pro (scene frame)   │
+│  POST /api/characters                → EXIF normalize · Sonnet describe │
+│  POST /api/characters/:id/auto-voice → Claude vision · pick Kokoro voice│
+│  POST /api/characters/:id/augment    → Flux Kontext Pro × 35 variations │
+│  POST /api/characters/:id/train      → fal-ai/flux-lora-fast-training   │
+│                                                                          │
+│  POST /api/projects/:id/scenes       → server-side routing decisions    │
+│       └─ shouldForceShared(desc) · inferSpeakerCharacterId(script)      │
+│                                                                          │
+│  POST /api/scenes/:id/generate       → routes to one of three paths:    │
+│       ├─ solo focus    → fal-ai/flux-lora (single trigger word)         │
+│       ├─ anchor scene  → Flux Kontext Pro (anchored to scene 0)         │
+│       └─ shared scene  → flux-pro/kontext/multi (cast prompt + binding) │
 │                                                                          │
 │  GET  /api/scenes/:id  (polling engine)                                 │
 │       ├─ image ready  → fal.queue.submit(WAN I2V)                       │
-│       │                 replicate.create(XTTS-v2)  ← parallel           │
-│       ├─ both ready   → FFmpeg merge (in-process, atempo sync)          │
+│       │                 fal.subscribe(Kokoro TTS)  ← parallel           │
+│       ├─ both ready   → FFmpeg merge (audio-aware trim)                 │
 │       └─ done         → Azure Blob → scene complete                     │
 │                                                                          │
 │  POST /api/projects/:id/stitch       → FFmpeg concat (in-process)       │
-│  POST /api/generate-brief            → Claude Haiku (scene writer)      │
+│  POST /api/generate-brief            → Claude Haiku (scene writer + speakers) │
 │  POST /api/voice/transcribe          → Whisper (Replicate)              │
 │                                                                          │
 │  ┌─────────────┐  ┌───────────────┐  ┌──────────────────────────────┐  │
@@ -113,10 +146,11 @@ Infrastructure is ~$30–50/month fixed, amortized across users.
 │ Storage      │   │ Flexible Server  │     │ Anthropic                 │
 │              │   │                  │     │                           │
 │ /characters/ │   │ users            │     │ flux-kontext-pro          │
-│ /scenes/     │   │ characters       │     │ flux-dev-lora-trainer     │
-│ /voices/     │   │ projects         │     │ wan-2.1-i2v               │
-│ /projects/   │   │ scenes           │     │ xtts-v2                   │
-└──────────────┘   │ voices · jobs    │     │ claude-haiku-4-5          │
+│ /scenes/     │   │ characters       │     │ flux-pro/kontext/multi    │
+│ /voices/     │   │ projects         │     │ flux-lora                 │
+│ /projects/   │   │ project_chars    │     │ flux-lora-fast-training   │
+│  · loras     │   │ scenes · voices  │     │ wan-i2v · kokoro          │
+└──────────────┘   │ jobs             │     │ sonnet-4-6 · haiku-4-5    │
                    └─────────────────┘     └───────────────────────────┘
 ```
 
@@ -174,12 +208,16 @@ GET /api/scenes/:id  (client polls every 5s)
 | Auth | NextAuth v4, credentials + JWT | Stateless; no Redis dependency |
 | Database | PostgreSQL 16, Prisma 7 | Relational graph across character / project / scene |
 | Storage | Azure Blob (public container) | CDN-served; direct URLs usable as ML API inputs |
-| Image gen | FLUX Kontext Pro (Replicate) | Best identity preservation with LoRA injection |
+| Solo image gen | fal-ai/flux-lora (fal.ai) | LoRA inference at training-host speed; ~10s/image |
+| Anchored image gen | FLUX Kontext Pro (Replicate) | Best identity preservation when anchoring to a prior frame |
+| Multi-character gen | fal-ai/flux-pro/kontext/multi (fal.ai) | Native multi-reference composition; no LoRA duplication |
 | Video gen | WAN 2.1 I2V (fal.ai) | Highest quality image-to-video; illustrated style support |
-| Voice cloning | XTTS-v2 (Replicate) | Open-weight; real voice clone from 30s sample |
-| LoRA training | flux-dev-lora-trainer (Replicate) | H100 fleet; ~20 min per character |
-| AI writing | Claude Haiku 4.5 | Fast, cheap; brief generation + moderation + prompt rewriting |
-| Video pipeline | fluent-ffmpeg + ffmpeg-static + ffprobe-static | In-process; no subprocess; atempo, concat, probing |
+| TTS (default) | Kokoro (fal.ai) | Preset voices; <$0.005/scene; synchronous via fal.subscribe |
+| TTS (custom) | XTTS-v2 (Replicate) | Real voice clone from 30s sample, opt-in |
+| LoRA training | fal-ai/flux-lora-fast-training | ~10–15 min per character; LoRAs mirrored to Azure |
+| Character description | Claude Sonnet 4.6 | Accurate age + skin tone + features; culture-neutral prompts |
+| AI writing | Claude Haiku 4.5 | Brief generation + speaker tagging + moderation + prompt rewriting |
+| Video pipeline | fluent-ffmpeg + ffmpeg-static + ffprobe-static | In-process; no subprocess; audio-aware trim, concat, probing |
 | UI | Tailwind CSS v4 + Radix UI | Accessible primitives; mobile-first |
 | Infra | Azure Container Apps + Bicep | Scale-to-zero; no timeout ceiling; 1-command deploy |
 
@@ -265,11 +303,13 @@ az containerapp update \
 
 Enforced per-user via the `jobs` table — no Redis, no external rate-limit service needed.
 
-| Feature | Limit | Reset |
-|---|---|---|
-| Scene generation | 10 / day | Midnight UTC |
-| AI brief generation | 20 / day | Midnight UTC |
-| LoRA training | 3 lifetime | Never |
+| Feature | Limit (FREE) | Limit (SUPER_USER) | Reset |
+|---|---|---|---|
+| Scene generation | 10 / day | unlimited | Midnight UTC |
+| AI brief generation | 20 / day | unlimited | Midnight UTC |
+| LoRA training | 10 / day | unlimited | Midnight UTC |
+| Account registration | 5 / IP / hour | — | Sliding window |
+| Password reset request | 3 / IP / hour | — | Sliding window |
 
 ---
 

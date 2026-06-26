@@ -69,42 +69,54 @@ describe("MODELS", () => {
 })
 
 describe("CARTOON_STYLE_PROMPTS", () => {
-  const requiredStyles = ["pixar", "anime", "comic", "sketch"] as const
+  const allStyles = ["pixar", "anime", "ghibli", "chibi", "comic", "sketch", "watercolor", "claymation"] as const
 
-  it("has all 4 style keys", () => {
-    for (const style of requiredStyles) {
+  it("has all 8 style keys", () => {
+    for (const style of allStyles) {
       expect(CARTOON_STYLE_PROMPTS).toHaveProperty(style)
     }
   })
 
   it("each style prompt is a non-empty string", () => {
-    for (const style of requiredStyles) {
+    for (const style of allStyles) {
       expect(typeof CARTOON_STYLE_PROMPTS[style]).toBe("string")
       expect(CARTOON_STYLE_PROMPTS[style].length).toBeGreaterThan(0)
     }
   })
 
   it("pixar prompt contains style-relevant keywords", () => {
-    const prompt = CARTOON_STYLE_PROMPTS.pixar.toLowerCase()
-    expect(prompt).toMatch(/pixar|disney|3d|animated/)
+    expect(CARTOON_STYLE_PROMPTS.pixar.toLowerCase()).toMatch(/pixar|disney|3d|animated/)
   })
 
   it("anime prompt contains style-relevant keywords", () => {
-    const prompt = CARTOON_STYLE_PROMPTS.anime.toLowerCase()
-    expect(prompt).toMatch(/anime|manga|cel/)
+    expect(CARTOON_STYLE_PROMPTS.anime.toLowerCase()).toMatch(/anime|manga|cel/)
+  })
+
+  it("ghibli prompt contains style-relevant keywords", () => {
+    expect(CARTOON_STYLE_PROMPTS.ghibli.toLowerCase()).toMatch(/ghibli|miyazaki/)
+  })
+
+  it("chibi prompt contains style-relevant keywords", () => {
+    expect(CARTOON_STYLE_PROMPTS.chibi.toLowerCase()).toMatch(/chibi|kawaii/)
   })
 
   it("comic prompt contains style-relevant keywords", () => {
-    const prompt = CARTOON_STYLE_PROMPTS.comic.toLowerCase()
-    expect(prompt).toMatch(/comic|superhero|ink|halftone/)
+    expect(CARTOON_STYLE_PROMPTS.comic.toLowerCase()).toMatch(/comic|superhero|ink|halftone/)
   })
 
   it("sketch prompt contains style-relevant keywords", () => {
-    const prompt = CARTOON_STYLE_PROMPTS.sketch.toLowerCase()
-    expect(prompt).toMatch(/sketch|pencil|hand-drawn|charcoal/)
+    expect(CARTOON_STYLE_PROMPTS.sketch.toLowerCase()).toMatch(/sketch|pencil|hand-drawn|charcoal/)
   })
 
-  it("has exactly 4 style keys (no extras)", () => {
-    expect(Object.keys(CARTOON_STYLE_PROMPTS)).toHaveLength(4)
+  it("watercolor prompt contains style-relevant keywords", () => {
+    expect(CARTOON_STYLE_PROMPTS.watercolor.toLowerCase()).toContain("watercolor")
+  })
+
+  it("claymation prompt contains style-relevant keywords", () => {
+    expect(CARTOON_STYLE_PROMPTS.claymation.toLowerCase()).toMatch(/clay|aardman|laika/)
+  })
+
+  it("has exactly 8 style keys", () => {
+    expect(Object.keys(CARTOON_STYLE_PROMPTS)).toHaveLength(8)
   })
 })
