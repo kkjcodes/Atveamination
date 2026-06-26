@@ -6,7 +6,7 @@ Upload a photo → pick a cartoon style → clone your voice → write scenes wi
 
 **~$0.11 per second of finished video.** Personalized cartoon character, voice clone, and animated scenes — all on a single 2 GB container.
 
-> Built solo. Shipped to production. Running live at [atveanimation.com](https://atveanimation.com).
+> Built solo. Shipped to production. Running live at [www.atveanimation.com](https://www.atveanimation.com).
 
 ---
 
@@ -39,7 +39,25 @@ Once the keyframe is ready, WAN 2.1 I2V (fal.ai) generates a 5-second animated v
 The biggest unsolved problem in AI video is identity drift — characters look different in every frame. The fix here is non-trivial: every keyframe generation re-injects the user's LoRA weights AND anchors the prompt to the first scene's output. Subsequent scenes are generated as edits of the first, not independent generations. Result: a character that actually looks like the same person across a 5-scene video.
 
 ### Multi-character scenes without duplication
-Single-LoRA inference can only produce one trained character. When the scene description asks for "Kumar proposes to Kirti," loading Kumar's LoRA renders both subjects as Kumar — the same face fills every slot in the prompt. Multi-Kontext (fal-ai/flux-pro/kontext/multi) takes distinct reference images, but the model needs explicit binding or it picks one reference and renders both subjects from it. The fix is a server-side prompt builder that emits an explicit cast block (`Character A from reference image 1: Kumar — <description>`), an anti-duplication clause, and a relational-cue detector that auto-routes scenes containing "they embrace" or "approaching figure" to Multi-Kontext even when no character names appear in the description.
+Single-LoRA inference can only produce one trained character. When the scene description asks for "Kumar proposes to Kirti," loading Kumar's LoRA renders both subjects as Kumar — the same face fills every slot in the prompt. Multi-Kontext (fal-ai/flux-pro/kontext/multi) takes distinct reference images, but the model needs explicit binding or it picks one reference and renders both subjects from it. The fix is a server-side prompt builder that emits an explicit cast block bound to reference image positions, an anti-duplication clause, and a relational-cue detector that auto-routes scenes containing "they embrace" or "approaching figure" to Multi-Kontext even when no character names appear in the description.
+
+The cast block that hits fal.ai for a 2-character shared scene looks roughly like this:
+
+```
+Cast — render EXACTLY one of each character below. Do NOT duplicate any
+character. Do NOT add any extra people:
+• Character A (from reference image 1): Kumar — Indian man, early 40s,
+  medium-warm brown skin, short black wavy hair, wire-rim oval glasses
+• Character B (from reference image 2): Kirti — Indian woman, late 20s,
+  long dark hair, gold pendant necklace
+
+Scene: <description>
+
+CRITICAL constraints: exactly one of each named character in the cast,
+never more. No anonymous extra people. No duplicates of the same character.
+```
+
+`image_urls[0]` is bound to Character A, `image_urls[1]` to Character B; ordering comes from `ProjectCharacter.orderIndex` so the binding is deterministic across re-generations. The character descriptions inside each cast line are the Sonnet-generated visual descriptions stored on the `Character` model, so identity features (glasses, hair, skin tone, distinguishing marks) are anchored both in the reference image AND in the text — the model needs both signals to consistently keep two characters apart.
 
 ### Identity preservation through the training pipeline
 A LoRA learns whatever's in the training zip. If the augmentation step subtly darkens skin tone or adds facial hair, the LoRA learns the drift as identity — and every generated frame has it baked in. The fix is structural: the training set is 35 cartoon variations PLUS 5 copies of the original photo (counterbalancing the cartoon-side darkening), the Sonnet description is culture-neutral (the earlier prompt that enumerated bindi/sindoor/tilak caused Kontext Pro to hallucinate them onto every face, regardless of source), and EXIF orientation is normalized on upload (iPhone selfies with `orientation=6` rendered sideways through Kontext Pro, which consistently misinterpreted them as a reclining female figure with long hair — producing the wrong-gender cartoon from a male source).
@@ -227,6 +245,8 @@ GET /api/scenes/:id  (client polls every 5s)
 
 **Prerequisites:** Node.js 20+, Docker, API keys from Replicate / fal.ai / Anthropic.
 
+**Stack note:** this runs on Next.js 16 with Turbopack as the bundler (both dev and production builds). Next.js 16 is recent — if you're used to the 14/15 toolchain, expect a few differences: route handlers default to running on the Node runtime (not Edge), the `app/` directory is the only supported router, and Turbopack is the default for `next dev` and `next build`. No special flags are needed for the FFmpeg/ESM modules used here — the in-process ffmpeg calls work under Turbopack as long as binary paths are resolved via `process.cwd()` (see the §"Running FFmpeg in a Turbopack/Next.js standalone bundle" section above for why).
+
 ```bash
 git clone https://github.com/yourusername/atveanimation.git
 cd atveanimation
@@ -317,7 +337,9 @@ Enforced per-user via the `jobs` table — no Redis, no external rate-limit serv
 
 **What is stored:** the user's uploaded photo, a 30-second voice recording, trained LoRA weights (on Replicate's infrastructure), and all generated images, audio, and video clips (on Azure Blob Storage).
 
-**Access model:** every blob is stored at a UUID-keyed path — URLs are unguessable without database access. LoRA weights are private to the Replicate account. The blob container is public-read (no auth layer on URLs themselves); the security model is unguessable paths, which is a known trade-off made so direct URLs can be passed to external ML APIs without a signed-URL redirect step. Migrating to private container + SAS URLs is tracked as future work.
+**Access model:** every blob is stored at a UUID-keyed path — URLs are unguessable without database access. LoRA weights are stored as private Azure blobs with the same UUID-path scheme; the LoRA URL is passed inline to fal.ai's `flux-lora` endpoint at inference time. The blob container is public-read (no auth layer on URLs themselves); the security model is unguessable paths, which is a known trade-off made so direct URLs can be passed to external ML APIs without a signed-URL redirect step.
+
+**Migration path to private blobs:** the planned hardening is private containers with short-lived Azure SAS tokens — 5-minute expirations, generated server-side at the moment a URL is handed to an external API (fal/Replicate webhook input). The webhook-receiving endpoints would still get a direct URL, but the URL would expire before it could be replayed. The blocker is that some of the external APIs cache input URLs across retries, which would invalidate SAS tokens mid-request; a workable mitigation is to mirror inputs through a 1-hour ttl proxy so the SAS lifetime decouples from the third-party retry window. The architectural blueprint is in place; the migration is sequenced after the next round of identity-preservation work.
 
 **Deletion:** deleting a character removes all associated blobs and database records in one operation — images, clips, audio, and voice sample included.
 

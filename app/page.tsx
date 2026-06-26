@@ -348,14 +348,42 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Roadmap + contact ─────────────────────────────────────────────── */}
+      {/* ── You-asked-we-shipped + contact ───────────────────────────────── */}
       <section className="px-6 py-16 bg-white border-y border-zinc-100">
         <div className="mx-auto max-w-3xl text-center">
-          <p className="text-xs font-semibold uppercase tracking-widest text-violet-500 mb-3">Always Improving</p>
-          <h2 className="text-2xl font-bold text-zinc-900 mb-3">This is just the beginning</h2>
+          <p className="text-xs font-semibold uppercase tracking-widest text-violet-500 mb-3">You Asked, We Shipped</p>
+          <h2 className="text-2xl font-bold text-zinc-900 mb-3">Built around your feedback</h2>
+          <p className="text-zinc-500 leading-relaxed max-w-xl mx-auto mb-8">
+            Most of what&apos;s here came from someone emailing in and asking for it. A few of the recent ones:
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-3 mb-8 text-left">
+            {[
+              {
+                ask: "Can I put the whole family in one video?",
+                ship: "Multi-character videos — up to 4 people in one cartoon.",
+              },
+              {
+                ask: "Why does everyone sound the same?",
+                ship: "Each character now speaks in their own voice, auto-matched to their look.",
+              },
+              {
+                ask: "Audio cuts off at the end of every scene.",
+                ship: "Audio-aware video trimming — no more dead silence in the final cut.",
+              },
+            ].map(({ ask, ship }) => (
+              <div key={ask} className="rounded-xl bg-violet-50 border border-violet-100 p-5">
+                <p className="text-xs font-semibold text-violet-500 uppercase tracking-wide mb-2">You said</p>
+                <p className="text-sm text-zinc-700 italic mb-3">&ldquo;{ask}&rdquo;</p>
+                <p className="text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-2">We shipped</p>
+                <p className="text-sm text-zinc-700 leading-snug">{ship}</p>
+              </div>
+            ))}
+          </div>
+
           <p className="text-zinc-500 leading-relaxed max-w-xl mx-auto">
-            We ship new features regularly — longer videos, more styles, episodic content, and more are on the way.
-            If there&apos;s something you&apos;d love to see, we want to hear about it.
+            Longer videos, more cartoon styles, and episodic content are next on the list.
+            If there&apos;s something you&apos;d love to see, tell us.
           </p>
           <a
             href="mailto:contact@atveanimation.com"
@@ -366,7 +394,7 @@ export default function LandingPage() {
             </svg>
             contact@atveanimation.com
           </a>
-          <p className="mt-3 text-xs text-zinc-400">Feature requests, feedback, or just to say hello — we read every email.</p>
+          <p className="mt-3 text-xs text-zinc-400">We read every email.</p>
         </div>
       </section>
 

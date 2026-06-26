@@ -67,3 +67,6 @@ next-env.d.ts
 # Local test photos (PII / EXIF GPS) and personal notes
 Testing/
 Episodes.md
+
+# Personal / launch material — not for the public repo
+nextsteps.md
