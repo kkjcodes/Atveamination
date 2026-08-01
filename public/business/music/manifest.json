@@ -1,0 +1,254 @@
+{
+  "bold_promo_intense_fast": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/intense_fast.mp3",
+    "tags": {
+      "bpm": 124,
+      "energy": 0.28659442881727387,
+      "brightness": 0.42002123735494273,
+      "dynamics": 0.08377869610186124,
+      "mood": "intense",
+      "source": "local"
+    },
+    "sha256_prefix": "46cd04b8347dce1a",
+    "curated_at": "2026-07-22T04:21:51.381Z"
+  },
+  "bold_promo_upbeat_fast": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_fast.mp3",
+    "tags": {
+      "bpm": 125,
+      "energy": 0.234494272406013,
+      "brightness": 0.6675202575888569,
+      "dynamics": 0.06733247378730882,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "446fb5f04ea105bb",
+    "curated_at": "2026-07-22T04:21:54.686Z"
+  },
+  "bold_promo_upbeat_fast_2": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_fast_2.mp3",
+    "tags": {
+      "bpm": 150,
+      "energy": 0.21060354130595607,
+      "brightness": 0.7093363240704573,
+      "dynamics": 0.057760736410476986,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "eaf7ac79c83a439b",
+    "curated_at": "2026-07-22T04:21:56.464Z"
+  },
+  "bold_promo_upbeat_fast_3": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_fast_3.mp3",
+    "tags": {
+      "bpm": 159,
+      "energy": 0.2843920794138791,
+      "brightness": 0.5614138856607559,
+      "dynamics": 0.08429475131889887,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "27421bac10714da3",
+    "curated_at": "2026-07-22T04:22:00.368Z"
+  },
+  "bold_promo_upbeat_fast_4": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_fast_4.mp3",
+    "tags": {
+      "bpm": 120,
+      "energy": 0.24867649871736597,
+      "brightness": 0.7665172803028116,
+      "dynamics": 0.06045995019336932,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "1f74082bb4225175",
+    "curated_at": "2026-07-22T04:22:06.604Z"
+  },
+  "bold_promo_upbeat_mid": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_mid.mp3",
+    "tags": {
+      "bpm": 100,
+      "energy": 0.26203110253366135,
+      "brightness": 0.986784342870465,
+      "dynamics": 0.07907389522039542,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "cfc04b8867e52407",
+    "curated_at": "2026-07-22T04:21:58.791Z"
+  },
+  "bold_promo_upbeat_mid_2": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_mid_2.mp3",
+    "tags": {
+      "bpm": 118,
+      "energy": 0.18779939655752473,
+      "brightness": 0.9519578073019359,
+      "dynamics": 0.07800406644489466,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "c23c388d92c24bde",
+    "curated_at": "2026-07-22T04:22:02.557Z"
+  },
+  "bold_promo_upbeat_mid_3": {
+    "family": "bold_promo",
+    "path": "/business/music/bold_promo/upbeat_mid_3.mp3",
+    "tags": {
+      "bpm": 105,
+      "energy": 0.23324997247527834,
+      "brightness": 0.9402457953640048,
+      "dynamics": 0.10990495250456386,
+      "mood": "upbeat",
+      "source": "local"
+    },
+    "sha256_prefix": "98ec59701e7f4ab4",
+    "curated_at": "2026-07-22T04:22:04.422Z"
+  },
+  "clean_modern_peaceful_fast": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_fast.mp3",
+    "tags": {
+      "bpm": 124,
+      "energy": 0.22216763261988465,
+      "brightness": 0.9886614490294969,
+      "dynamics": 0.07153151654072595,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "d49fa7d5ab625a91",
+    "curated_at": "2026-07-22T03:22:28.802Z"
+  },
+  "clean_modern_peaceful_fast_2": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_fast_2.mp3",
+    "tags": {
+      "bpm": 148,
+      "energy": 0.04667739469072199,
+      "brightness": 0.9970736748836875,
+      "dynamics": 0.019535908823802517,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "0744651a6162c2e1",
+    "curated_at": "2026-07-22T03:22:32.185Z"
+  },
+  "clean_modern_peaceful_fast_3": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_fast_3.mp3",
+    "tags": {
+      "bpm": 151,
+      "energy": 0.22187010214606334,
+      "brightness": 1,
+      "dynamics": 0.06822427606605809,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "e57b734fb78e4035",
+    "curated_at": "2026-07-22T03:22:39.417Z"
+  },
+  "clean_modern_peaceful_fast_4": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_fast_4.mp3",
+    "tags": {
+      "bpm": 140,
+      "energy": 0.2758554854109818,
+      "brightness": 0.826758083777941,
+      "dynamics": 0.10304765017993693,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "f8709258697809ff",
+    "curated_at": "2026-07-22T03:22:50.948Z"
+  },
+  "clean_modern_peaceful_mid": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_mid.mp3",
+    "tags": {
+      "bpm": 105,
+      "energy": 0.19276192372447157,
+      "brightness": 1,
+      "dynamics": 0.058449642378100485,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "ac1430b12cda8a3a",
+    "curated_at": "2026-07-22T03:22:25.488Z"
+  },
+  "clean_modern_peaceful_mid_2": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_mid_2.mp3",
+    "tags": {
+      "bpm": 112,
+      "energy": 0.1591524539244343,
+      "brightness": 0.7543497487032752,
+      "dynamics": 0.06644759430077282,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "b3b848e94ae36654",
+    "curated_at": "2026-07-22T03:22:36.129Z"
+  },
+  "clean_modern_peaceful_mid_3": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_mid_3.mp3",
+    "tags": {
+      "bpm": 105,
+      "energy": 0.218680917603314,
+      "brightness": 1,
+      "dynamics": 0.09473405114107607,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "833fb0ceaf0f26b6",
+    "curated_at": "2026-07-22T03:22:46.952Z"
+  },
+  "clean_modern_peaceful_slow": {
+    "family": "clean_modern",
+    "path": "/business/music/clean_modern/peaceful_slow.mp3",
+    "tags": {
+      "bpm": 93,
+      "energy": 0.20259728926707582,
+      "brightness": 0.809043457085792,
+      "dynamics": 0.04930619677592613,
+      "mood": "peaceful",
+      "source": "local"
+    },
+    "sha256_prefix": "4c8782cf731cacf8",
+    "curated_at": "2026-07-22T03:22:43.960Z"
+  },
+  "scrapbook_holiday_slow": {
+    "family": "scrapbook",
+    "path": "/business/music/scrapbook/holiday_slow.mp3",
+    "tags": {
+      "bpm": 83,
+      "energy": 0.23669554980668658,
+      "brightness": 1,
+      "dynamics": 0.06315989374627082,
+      "mood": "holiday",
+      "source": "local"
+    },
+    "sha256_prefix": "c3a97735338d6599",
+    "curated_at": "2026-07-22T03:22:41.894Z"
+  },
+  "scrapbook_warm_mid": {
+    "family": "scrapbook",
+    "path": "/business/music/scrapbook/warm_mid.mp3",
+    "tags": {
+      "bpm": 113,
+      "energy": 0.28398853769410937,
+      "brightness": 0.31246382871192085,
+      "dynamics": 0.12275910722223532,
+      "mood": "warm",
+      "source": "local"
+    },
+    "sha256_prefix": "ef0ae9e3d59cc440",
+    "curated_at": "2026-07-22T03:22:21.540Z"
+  }
+}

@@ -3,12 +3,15 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
-import { fal, FAL_MODELS } from "@/lib/fal/client"
+import { fal, FAL_MODELS, languageForVoice, kokoroSpeedForBudget } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
 import { describeFirstFrame } from "@/lib/ai/describe"
 import { inferSpeakerCharacterId } from "@/lib/scene-routing"
 import { logError } from "@/lib/logger"
+import { chunkPlanForDuration } from "@/lib/video/chunk-plan"
+import { extractLastFrame } from "@/lib/video/extract-last-frame"
+import { finalizeChunks as finalizeChunksLocal } from "@/lib/video/finalize-chunks"
 
 async function createPredictionWithRetry(
   args: Parameters<typeof replicate.predictions.create>[0],
@@ -109,7 +112,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   let scene = await prisma.scene.findFirst({
     where: { id },
     include: { project: { select: {
-      userId: true, characterId: true, voiceId: true,
+      userId: true, characterId: true, voiceId: true, language: true,
       characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } },
     } } },
   })
@@ -179,14 +182,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         const charDesc = character.characterDescription?.trim()
         const ttsText = scene.voiceScript?.trim() || scene.description
 
-        // Motion keywords: "slow smooth" keeps facial geometry intact and prevents
-        // background warping — high motion settings cause style drift on cartoon characters.
-        const rawVideoPrompt = `${hints.video}, ${charDesc ? charDesc + ", " : ""}${scene.description}, animated cartoon scene, illustrated cartoon background, 2D painted background, slow smooth motion, gentle movement, stable background`
-        const negativePrompt = "realistic, photorealistic, live action, real background, real world background, photograph, photography, stock photo, natural landscape, human skin texture, blurry, low quality, fast motion, sudden movement, shaky camera, motion blur, camera pan, flickering, nsfw, nudity, nude, explicit, sexual, adult content"
+        // Motion keywords: "smooth natural motion" keeps facial geometry intact
+        // without over-suppressing motion. Previous "slow / gentle" wording made
+        // WAN produce near-static clips that read as still images to users.
+        // Negative prompt below still bans shaky camera + motion blur, which is
+        // what actually protects identity — the "slow" tag wasn't doing the work.
+        const rawVideoPrompt = `${hints.video}, ${charDesc ? charDesc + ", " : ""}${scene.description}, animated cartoon scene, illustrated cartoon background, 2D painted background, smooth natural motion, stable background`
+        const negativePrompt = "realistic, photorealistic, live action, real background, real world background, photograph, photography, stock photo, natural landscape, human skin texture, blurry, low quality, static image, frozen frame, still frame, shaky camera, motion blur, camera pan, flickering, nsfw, nudity, nude, explicit, sexual, adult content"
 
         const videoPrompt = await sanitizeVideoPrompt(rawVideoPrompt)
 
         const kokoroVoice = (voice?.ttsParams as { kokoroVoice?: string } | null)?.kokoroVoice
+        const ttsLanguage = kokoroVoice ? languageForVoice(kokoroVoice) : (scene.project.language ?? "en")
         const projectVoiceId = scene.project.voiceId
         console.log("[scene/poll] image done — voice:", {
           voiceId: projectVoiceId,
@@ -194,6 +201,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
           hasSampleUrl: !!voice?.sampleAudioUrl,
           ttsText: ttsText?.slice(0, 80),
         })
+
+        // Chunk plan: 6s target → 1 chunk; 10s → 2 chunks; 15s → 3 chunks.
+        // First chunk uses the keyframe as image_url. Subsequent chunks are
+        // seeded by the previous chunk's last frame (see the fal webhook and
+        // the polling video-completion branch below).
+        const plan = chunkPlanForDuration(scene.durationSeconds)
+        const firstChunkFrames = plan.framesPerChunk[0]
 
         const [falSubmit, imageUrl] = await Promise.all([
           fal.queue.submit(FAL_MODELS.wan, {
@@ -204,9 +218,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
               resolution: "720p",
               aspect_ratio: "16:9",
               guide_scale: 8,
-              // fal-ai/wan-i2v caps at 100 frames (~6s at 16fps).
-              // Always request the maximum so users get the longest possible clip.
-              num_frames: 100,
+              num_frames: firstChunkFrames,
             },
           }),
           mirrorUrlToBlob(keyframeUrl, `scenes/${id}/frame.jpg`),
@@ -227,7 +239,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
         if (kokoroVoice && ttsText) {
           try {
-            const r = await fal.subscribe(FAL_MODELS.kokoro, { input: { text: ttsText, voice: kokoroVoice } })
+            const targetSec = scene.durationSeconds ?? 6
+            const speed = kokoroSpeedForBudget(ttsText, targetSec, ttsLanguage)
+            const r = await fal.subscribe(FAL_MODELS.kokoro, { input: { text: ttsText, voice: kokoroVoice, language: ttsLanguage, speed } })
             const d = r.data as { audio?: { url: string }; audio_url?: string; audio_file?: { url: string } }
             const rawUrl = d?.audio?.url ?? d?.audio_url ?? d?.audio_file?.url
             if (rawUrl) {
@@ -244,7 +258,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             const speakerUri = await toDataUri(voice.sampleAudioUrl)
             const pred = await createPredictionWithRetry({
               ...predRef(MODELS.xttsV2),
-              input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: false },
+              input: { text: ttsText, speaker: speakerUri, language: ttsLanguage, cleanup_voice: false },
             })
             console.log("[scene/poll] audio pred created:", pred.id)
             audioPredId = pred.id
@@ -267,6 +281,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             imageUrl,
             generationPhase: "video",
             videoPredictionId: falSubmit.request_id,
+            videoChunkCount: plan.framesPerChunk.length,
+            videoChunkUrls: [],
+            videoPrompt: videoPrompt,
             audioPredictionId: audioPredId,
             audioUrl,
           },
@@ -276,7 +293,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     scene = await prisma.scene.findFirst({
       where: { id },
-      include: { project: { select: { userId: true, characterId: true, voiceId: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
+      include: { project: { select: { userId: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
     }) ?? scene
   }
 
@@ -321,15 +338,90 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             console.log("[scene/poll] audio pred did not succeed:", audioPred.status, audioPred.error)
           }
 
-          const videoUrl = await mirrorUrlToBlob(rawVideo, `scenes/${id}/clip.mp4`)
-          await prisma.scene.update({
-            where: { id },
-            data: { videoClipUrl: videoUrl, audioUrl: audioUrl ?? scene.audioUrl ?? null, generationPhase: "done" },
-          })
+          // Chunked handling: single-chunk scenes ship straight to done; multi-
+          // chunk scenes advance until the final chunk arrives, then concat.
+          const chunkCount = scene.videoChunkCount ?? 1
+          const priorChunkUrls = Array.isArray(scene.videoChunkUrls)
+            ? (scene.videoChunkUrls as string[])
+            : []
+          const chunkIndex = priorChunkUrls.length
+
+          const chunkBlobPath = chunkCount === 1
+            ? `scenes/${id}/clip.mp4`
+            : `scenes/${id}/chunk_${chunkIndex}.mp4`
+          const chunkClipUrl = await mirrorUrlToBlob(rawVideo, chunkBlobPath)
+          const updatedChunkUrls = [...priorChunkUrls, chunkClipUrl]
+
+          const hasMoreChunks = chunkIndex + 1 < chunkCount
+
+          if (hasMoreChunks) {
+            // Submit next chunk seeded by this chunk's last frame; keep phase=video.
+            const plan = chunkPlanForDuration(scene.durationSeconds)
+            const framesNext = plan.framesPerChunk[chunkIndex + 1]
+            const cachedPrompt = scene.videoPrompt
+            if (!cachedPrompt) {
+              console.error("[scene/poll] chunk-advance failed: no cached videoPrompt on scene", id)
+              await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } })
+            } else {
+              try {
+                const seedFrameUrl = await extractLastFrame(chunkClipUrl, id, chunkIndex)
+                const nextSubmit = await fal.queue.submit(FAL_MODELS.wan, {
+                  input: {
+                    prompt: cachedPrompt,
+                    image_url: seedFrameUrl,
+                    negative_prompt: "realistic, photorealistic, live action, real background, real world background, photograph, photography, stock photo, natural landscape, human skin texture, blurry, low quality, static image, frozen frame, still frame, shaky camera, motion blur, camera pan, flickering, nsfw, nudity, nude, explicit, sexual, adult content",
+                    resolution: "720p",
+                    aspect_ratio: "16:9",
+                    guide_scale: 8,
+                    num_frames: framesNext,
+                  },
+                })
+                await prisma.scene.update({
+                  where: { id },
+                  data: {
+                    videoChunkUrls: updatedChunkUrls,
+                    videoPredictionId: nextSubmit.request_id,
+                    audioUrl: audioUrl ?? scene.audioUrl ?? null,
+                  },
+                })
+              } catch (chainErr) {
+                console.error("[scene/poll] chunk-advance submit failed, finalizing early:", (chainErr as Error)?.message)
+                const truncatedTarget = Math.max(1, updatedChunkUrls.length) * 6
+                const finalVideoUrl = await finalizeChunksLocal(id, updatedChunkUrls, truncatedTarget)
+                await prisma.scene.update({
+                  where: { id },
+                  data: {
+                    videoChunkUrls: updatedChunkUrls,
+                    videoClipUrl: finalVideoUrl,
+                    audioUrl: audioUrl ?? scene.audioUrl ?? null,
+                    generationPhase: "done",
+                  },
+                })
+              }
+            }
+          } else {
+            // Final chunk arrived (or single-chunk).
+            const videoUrl = chunkCount === 1
+              ? chunkClipUrl
+              : await finalizeChunksLocal(
+                  id,
+                  updatedChunkUrls,
+                  chunkPlanForDuration(scene.durationSeconds).targetSeconds,
+                )
+            await prisma.scene.update({
+              where: { id },
+              data: {
+                videoChunkUrls: updatedChunkUrls,
+                videoClipUrl: videoUrl,
+                audioUrl: audioUrl ?? scene.audioUrl ?? null,
+                generationPhase: "done",
+              },
+            })
+          }
 
           scene = await prisma.scene.findFirst({
             where: { id },
-            include: { project: { select: { userId: true, characterId: true, voiceId: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
+            include: { project: { select: { userId: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
           }) ?? scene
         }
       }

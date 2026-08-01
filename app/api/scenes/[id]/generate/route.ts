@@ -287,6 +287,11 @@ CRITICAL constraints: exactly one of each named character in the cast, never mor
           imageUrl: null,
           videoClipUrl: null,
           audioUrl: null,
+          // Reset chunk state so a re-run at a different duration doesn't
+          // inherit stale chunk URLs or cached prompt.
+          videoChunkUrls: [],
+          videoChunkCount: 1,
+          videoPrompt: null,
         },
       }),
       logUsage(userId, "scene_generate", id, "scene"),

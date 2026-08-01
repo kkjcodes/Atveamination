@@ -7,7 +7,7 @@ export default function HelpPage() {
 
       <div className="max-w-3xl mx-auto py-12 px-6 space-y-12">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900">How AtVeAnimation Works</h1>
+          <h1 className="text-3xl font-bold text-zinc-900">How it works</h1>
           <p className="text-zinc-500 mt-2">
             Turn yourself into an animated cartoon character and create short videos with your cloned voice.
           </p>
@@ -37,7 +37,7 @@ export default function HelpPage() {
               },
               {
                 step: "4",
-                title: "Record your voice (optional)",
+                title: "Add your own voice (optional)",
                 body: "Read 2–3 sentences aloud in a quiet room. The AI clones your voice and uses it to narrate your video scenes. Skip this step if you want silent videos.",
               },
               {
@@ -47,7 +47,7 @@ export default function HelpPage() {
               },
               {
                 step: "6",
-                title: "Generate and stitch",
+                title: "Watch it come together",
                 body: "Click Generate All Scenes to start generating. Each scene takes 3–8 minutes. When all scenes are ready, click Generate Final Video to stitch them together with audio.",
               },
             ].map(({ step, title, body }) => (
@@ -69,11 +69,11 @@ export default function HelpPage() {
             Tips for better scene descriptions
           </h2>
           <div className="space-y-3 text-sm text-zinc-600">
-            <p><span className="font-medium text-zinc-800">Be specific and visual.</span> Instead of "the character is happy", write "the character sits at a sunlit café table, smiling and holding a coffee cup, a warm golden light streaming through the window".</p>
+            <p><span className="font-medium text-zinc-800">Be specific and visual.</span> Instead of &ldquo;the character is happy&rdquo;, write &ldquo;the character sits at a sunlit café table, smiling and holding a coffee cup, a warm golden light streaming through the window&rdquo;.</p>
             <p><span className="font-medium text-zinc-800">Include the setting.</span> Where is the character? Time of day? Indoor or outdoor? The AI uses all of this to compose the scene.</p>
-            <p><span className="font-medium text-zinc-800">Use the AI brief generator.</span> Click Write with AI in the studio and describe your video in plain language — "A 30-second upbeat video of my character waking up, making coffee, and heading out for a run." The AI expands this into detailed scene prompts.</p>
+            <p><span className="font-medium text-zinc-800">Use the AI brief generator.</span> Click Write with AI in the studio and describe your video in plain language — &ldquo;A 30-second upbeat video of my character waking up, making coffee, and heading out for a run.&rdquo; The AI expands this into detailed scene prompts.</p>
             <p><span className="font-medium text-zinc-800">Keep voice scripts short.</span> 1–2 sentences per scene work best for the voice cloning model. The script should feel natural when spoken aloud, not read.</p>
-            <p><span className="font-medium text-zinc-800">Name your video first.</span> Set the video title before clicking Generate — you'll find it in the header bar of the studio page.</p>
+            <p><span className="font-medium text-zinc-800">Name your video first.</span> Set the video title before clicking Generate — you&apos;ll find it in the header bar of the studio page.</p>
           </div>
         </section>
 
@@ -96,11 +96,11 @@ export default function HelpPage() {
                 a: "Yes — go to your character page and click Create Video. Each video is a separate project but all share the same trained character model.",
               },
               {
-                q: "How long does video generation take?",
-                a: "Each scene takes 3–8 minutes: image generation (~30s), upscaling (~15s), video generation with WAN (~4–6 min), and enhancement to 1080p (~1–2 min). Audio is generated in parallel and usually finishes first.",
+                q: "How long does a video take?",
+                a: "Long enough for a coffee break and a walk. Character training runs about twenty minutes the first time (once per character). After that, each scene takes a few minutes. You can leave the page and come back — everything keeps running in the background.",
               },
               {
-                q: "My audio failed for scene 1 — is that a bug?",
+                q: "Scene 1 audio didn't work — what happened?",
                 a: "Scene 1 generates image, video, and audio all at the same time, which can briefly hit Replicate's rate limit. The system retries automatically. If it fails after retries, scene 1 will be silent but subsequent scenes should have audio.",
               },
             ].map(({ q, a }) => (

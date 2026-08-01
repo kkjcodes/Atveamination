@@ -16,11 +16,20 @@ export default function DeleteButton({
   const router = useRouter()
   const [confirming, setConfirming] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleDelete() {
     setLoading(true)
+    setError(null)
     try {
-      await fetch(url, { method: "DELETE" })
+      // Verify res.ok — old code fired-and-redirected regardless, so a 403
+      // or 500 delete still routed users away and left the row in the DB.
+      const res = await fetch(url, { method: "DELETE" }).catch(() => null)
+      if (!res || !res.ok) {
+        setError("Couldn't delete this. Try again.")
+        setLoading(false)
+        return
+      }
       if (redirectTo) {
         router.push(redirectTo)
       } else {
@@ -34,23 +43,26 @@ export default function DeleteButton({
 
   if (confirming) {
     return (
-      <span className="flex items-center gap-1">
-        <Button
-          size="sm"
-          variant="destructive"
-          onClick={handleDelete}
-          disabled={loading}
-        >
-          {loading ? "Deleting…" : "Confirm"}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => setConfirming(false)}
-          disabled={loading}
-        >
-          Cancel
-        </Button>
+      <span className="flex flex-col gap-1">
+        <span className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={loading}
+          >
+            {loading ? "Deleting…" : "Confirm"}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConfirming(false)}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+        </span>
+        {error && <span role="alert" className="text-xs text-red-600">{error}</span>}
       </span>
     )
   }

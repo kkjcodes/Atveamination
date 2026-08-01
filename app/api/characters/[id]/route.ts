@@ -29,6 +29,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       selected_style: character.selectedStyle,
       lora_version: character.loraVersion,
       lora_training_status: character.loraTrainingStatus,
+      augment_status: character.augmentStatus,
+      training_images_count: Array.isArray(character.trainingImages) ? character.trainingImages.length : 0,
       created_at: character.createdAt,
       options: character.options.map((o: { id: string; characterId: string; styleUrl: string; styleName: string }) => ({
         id: o.id,

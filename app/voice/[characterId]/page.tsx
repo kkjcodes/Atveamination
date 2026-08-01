@@ -22,6 +22,7 @@ export default function VoiceSetupPage() {
   const [mode, setMode] = useState<"choose" | "preset" | "record">("choose")
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
   const [voiceGender, setVoiceGender] = useState<"all" | "male" | "female">("all")
+  const [voiceLanguage, setVoiceLanguage] = useState<"en" | "hi" | "es">("en")
   const [voiceAccent, setVoiceAccent] = useState<"all" | "american" | "british">("all")
 
   const [isRecording, setIsRecording] = useState(false)
@@ -51,7 +52,24 @@ export default function VoiceSetupPage() {
 
   async function startRecording() {
     setError(null)
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    // getUserMedia can reject if the user denies the permission prompt or has
+    // it permanently blocked in browser settings. Surface a specific message
+    // pointing them to browser settings — old code let the promise reject
+    // and left the user with no clue what to do.
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (e) {
+      const name = e instanceof Error ? e.name : ""
+      if (name === "NotAllowedError" || name === "SecurityError") {
+        setError("Microphone access is blocked. Allow it in your browser settings, then try again.")
+      } else if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        setError("We couldn't find a microphone on this device.")
+      } else {
+        setError("Couldn't start the microphone. Try again, or use a different browser.")
+      }
+      return
+    }
     const mr = new MediaRecorder(stream, { mimeType: "audio/webm" })
     chunksRef.current = []
     mr.ondataavailable = (e) => chunksRef.current.push(e.data)
@@ -106,7 +124,13 @@ export default function VoiceSetupPage() {
       form.append("character_id", characterId)
       form.append("tts_params", JSON.stringify({ kokoroVoice: selectedPreset }))
       const res = await fetch("/api/voice", { method: "POST", body: form })
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) {
+        // Old code threw the raw response body which might be JSON or HTML.
+        // Try JSON first for a specific message, else use friendly generic.
+        let msg = "We couldn't save this voice. Your recording is still on this page; try again."
+        try { const d = await res.json(); msg = d.error ?? msg } catch { /* keep default */ }
+        throw new Error(msg)
+      }
       router.push(`/character/${characterId}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save voice")
@@ -127,7 +151,13 @@ export default function VoiceSetupPage() {
       form.append("character_id", characterId)
       form.append("tts_params", JSON.stringify({}))
       const res = await fetch("/api/voice", { method: "POST", body: form })
-      if (!res.ok) throw new Error(await res.text())
+      if (!res.ok) {
+        // Old code threw the raw response body which might be JSON or HTML.
+        // Try JSON first for a specific message, else use friendly generic.
+        let msg = "We couldn't save this voice. Your recording is still on this page; try again."
+        try { const d = await res.json(); msg = d.error ?? msg } catch { /* keep default */ }
+        throw new Error(msg)
+      }
       router.push(`/character/${characterId}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save voice")
@@ -173,7 +203,7 @@ export default function VoiceSetupPage() {
             >
               <div className="text-2xl mb-3">🎤</div>
               <p className="font-semibold text-zinc-900 group-hover:text-violet-700">Clone Your Own Voice</p>
-              <p className="text-sm text-zinc-500 mt-1">Record 10–30 seconds and we'll clone your voice with AI.</p>
+              <p className="text-sm text-zinc-500 mt-1">Record 10–30 seconds and we&apos;ll clone your voice with AI.</p>
             </button>
           </div>
         )}
@@ -203,23 +233,38 @@ export default function VoiceSetupPage() {
                     ))}
                   </div>
                   <div className="flex rounded-lg border border-zinc-200 overflow-hidden text-sm">
-                    {(["all", "american", "british"] as const).map((a) => (
+                    {(["en", "hi", "es"] as const).map((l) => (
                       <button
-                        key={a}
+                        key={l}
                         type="button"
-                        onClick={() => setVoiceAccent(a)}
-                        className={`px-3 py-1.5 transition-colors ${voiceAccent === a ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
+                        onClick={() => setVoiceLanguage(l)}
+                        className={`px-3 py-1.5 transition-colors ${voiceLanguage === l ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
                       >
-                        {a === "all" ? "Any accent" : a === "american" ? "American" : "British"}
+                        {l === "en" ? "English" : l === "hi" ? "हिन्दी" : "Español"}
                       </button>
                     ))}
                   </div>
+                  {voiceLanguage === "en" && (
+                    <div className="flex rounded-lg border border-zinc-200 overflow-hidden text-sm">
+                      {(["all", "american", "british"] as const).map((a) => (
+                        <button
+                          key={a}
+                          type="button"
+                          onClick={() => setVoiceAccent(a)}
+                          className={`px-3 py-1.5 transition-colors ${voiceAccent === a ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
+                        >
+                          {a === "all" ? "Any accent" : a === "american" ? "American" : "British"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 {/* Voice list */}
                 <div className="space-y-2">
                   {PRESET_VOICES.filter((v) => {
+                    if (v.language !== voiceLanguage) return false
                     if (voiceGender !== "all" && v.gender !== voiceGender) return false
-                    if (voiceAccent !== "all" && v.accent !== voiceAccent) return false
+                    if (voiceLanguage === "en" && voiceAccent !== "all" && v.accent !== voiceAccent) return false
                     return true
                   }).map((v) => (
                     <button
@@ -234,7 +279,7 @@ export default function VoiceSetupPage() {
                     >
                       <p className="font-semibold text-zinc-900 text-sm">{v.label}</p>
                       <p className="text-xs text-zinc-500">
-                        {v.description} · {v.gender === "female" ? "Female" : "Male"} · {v.accent === "american" ? "American" : "British"}
+                        {v.description} · {v.gender === "female" ? "Female" : "Male"} · {v.accent === "american" ? "American" : v.accent === "british" ? "British" : v.accent === "indian" ? "Indian" : "Spanish"}
                       </p>
                     </button>
                   ))}

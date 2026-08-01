@@ -15,6 +15,11 @@ vi.mock("@/lib/db/client", () => ({
       update: mockSceneUpdate,
       findUnique: mockSceneFindUnique,
     },
+    scrapbookPage: {
+      updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+      findFirst: vi.fn().mockResolvedValue(null),
+      update: vi.fn().mockResolvedValue({}),
+    },
   },
 }))
 
@@ -100,11 +105,11 @@ describe("POST /api/webhooks/fal", () => {
 
     // video URL stored
     expect(mockSceneUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" } })
+      expect.objectContaining({ data: expect.objectContaining({ videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" }) })
     )
     // phase=done set (no audio needed)
     expect(mockSceneUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { generationPhase: "done" } })
+      expect.objectContaining({ data: expect.objectContaining({ generationPhase: "done" }) })
     )
   })
 
@@ -122,7 +127,7 @@ describe("POST /api/webhooks/fal", () => {
 
     // video URL stored
     expect(mockSceneUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ data: { videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" } })
+      expect.objectContaining({ data: expect.objectContaining({ videoClipUrl: "https://blob.example.com/scenes/scene-1/clip.mp4" }) })
     )
     // phase=done NOT set
     const doneCall = mockSceneUpdate.mock.calls.find(

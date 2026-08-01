@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/client"
 import { randomBytes } from "crypto"
 import { sendEmail, passwordResetEmail } from "@/lib/email/client"
 import { rateLimit } from "@/lib/rate-limit"
+import { logError } from "@/lib/logger"
 
 const TOKEN_TTL_MS = 60 * 60 * 1000 // 1 hour
 
@@ -35,8 +36,15 @@ export async function POST(req: NextRequest) {
   try {
     await sendEmail(email, "Reset your AtVeAnimation password", passwordResetEmail(resetUrl))
   } catch (e) {
-    console.error("[forgot-password] email send failed:", (e as Error).message)
-    // Don't surface email errors to the client
+    // High-visibility log to logger (structured, goes to Application
+    // Insights / Container Apps stream). We can't surface to the client
+    // without leaking user existence, but the operator must see this:
+    // silent success on send-failure = users stuck without recovery.
+    logError("/api/auth/forgot-password", "email_send_failed", {
+      userId: user.id,
+      envConfigured: !!process.env.AZURE_COMMUNICATION_CONNECTION_STRING,
+    }, e)
+    // Do not surface to the client (user-enumeration protection intact).
   }
 
   return NextResponse.json({ ok: true })

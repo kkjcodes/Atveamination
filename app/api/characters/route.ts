@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db/client"
 import { uploadBlob } from "@/lib/storage/client"
 import { describeCharacter } from "@/lib/ai/describe"
 import sharp from "sharp"
+import { validateImageFile, UploadValidationError } from "@/lib/business/upload"
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -43,11 +44,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "file is required" }, { status: 400 })
   }
 
+  // Enforce size + MIME limits BEFORE buffering. Sharp catches
+  // decompression bombs via a pixel-count check after metadata read.
+  try {
+    validateImageFile(file)
+  } catch (e) {
+    if (e instanceof UploadValidationError) {
+      return NextResponse.json({ error: e.message }, { status: e.status })
+    }
+    throw e
+  }
+
   // Bake EXIF orientation into pixel data and strip metadata. iPhone selfies
   // commonly have orientation=6 (rotate 90° for display); Flux/Kontext models
   // read raw pixels and misinterpret a sideways man as a reclining woman, so
   // the cartoon transform comes out badly wrong. Always normalize on upload.
   const rawBuffer = Buffer.from(await file.arrayBuffer())
+  const preMeta = await sharp(rawBuffer).metadata()
+  const pixels = (preMeta.width ?? 0) * (preMeta.height ?? 0)
+  if (pixels > 40 * 1_000_000) {
+    return NextResponse.json({ error: `Image too high-resolution (${preMeta.width}×${preMeta.height})` }, { status: 413 })
+  }
   const buffer = await sharp(rawBuffer).rotate().jpeg({ quality: 92 }).toBuffer()
   const blobPath = `${userId}/characters/${Date.now()}-${file.name.replace(/\.[^.]+$/, "")}.jpg`
 

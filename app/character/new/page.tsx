@@ -27,10 +27,10 @@ type Step = 1 | 2 | 3 | 4
 
 function StepIndicator({ current }: { current: Step }) {
   const steps = [
-    { n: 1, label: "Upload Your Photo" },
-    { n: 2, label: "Choose Your Style" },
-    { n: 3, label: "Train Character" },
-    { n: 4, label: "Pick a Voice" },
+    { n: 1, label: "Add a photo" },
+    { n: 2, label: "Pick a look" },
+    { n: 3, label: "Give us a few minutes" },
+    { n: 4, label: "Give it a voice" },
   ]
   return (
     <div className="flex items-center gap-0 mb-10">
@@ -92,12 +92,13 @@ export default function NewCharacterPage() {
   // Step 4: voice selection
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null)
   const [voiceGender, setVoiceGender] = useState<"all" | "male" | "female">("all")
+  const [voiceLanguage, setVoiceLanguage] = useState<"en" | "hi" | "es">("en")
   const [voiceAccent, setVoiceAccent] = useState<"all" | "american" | "british">("all")
   const [savingVoice, setSavingVoice] = useState(false)
 
   const onFileDrop = useCallback((file: File) => {
     if (!file.type.startsWith("image/")) {
-      setError("Please upload an image file.")
+      setError("That doesn't look like a photo. JPEG, PNG, or HEIC work best.")
       return
     }
     setError(null)
@@ -141,7 +142,7 @@ export default function NewCharacterPage() {
 
       const res = await fetch("/api/characters", { method: "POST", body: fd })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? "Upload failed")
+      if (!res.ok) throw new Error(data.error ?? "We couldn't save your photo. Check your connection and try again.")
 
       const charId: string = data.character.id
       setCharacterId(charId)
@@ -152,7 +153,7 @@ export default function NewCharacterPage() {
         method: "POST",
       })
       const stylesData = await stylesRes.json()
-      if (!stylesRes.ok) throw new Error(stylesData.error ?? "Style generation failed")
+      if (!stylesRes.ok) throw new Error(stylesData.error ?? "We couldn't make the style previews. Try uploading again.")
 
       setStyleOptions(stylesData.options)
     } catch (e) {
@@ -176,7 +177,7 @@ export default function NewCharacterPage() {
       })
       if (!selectRes.ok) {
         const d = await selectRes.json()
-        throw new Error(d.error ?? "Failed to select style")
+        throw new Error(d.error ?? "We couldn't save your pick. Try tapping again.")
       }
 
       // Step 3 — augmentation phase first
@@ -184,17 +185,36 @@ export default function NewCharacterPage() {
       setStep(3)
       setSubmitting(false)
 
+      // Augment endpoint now returns 202 (fire-and-forget) — the actual 35-image
+      // Kontext Pro loop runs in the background because it takes 2-5 min and blows
+      // past Cloudflare's 100s origin timeout. Poll character.augment_status until
+      // it flips to "succeeded" or "failed"; either way, proceed to /train.
+      // Fallback to single-image training is preserved on failure — same non-fatal
+      // behavior as before, just gated on the async completion instead of a return.
       const augRes = await fetch(`/api/characters/${characterId}/augment`, { method: "POST" })
       if (!augRes.ok) {
-        const d = await augRes.json()
-        // Non-fatal — fall back to single-image training
-        console.warn("[new] augment failed, proceeding with 1 image:", d.error)
+        const d = await augRes.json().catch(() => ({}))
+        console.warn("[new] augment kickoff failed, proceeding with 1 image:", d.error)
+      } else {
+        const deadline = Date.now() + 12 * 60 * 1000
+        let augStatus: string | null = "processing"
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 5000))
+          const s = await fetch(`/api/characters/${characterId}`)
+          if (!s.ok) continue
+          const d = await s.json()
+          augStatus = d.character?.augment_status ?? null
+          if (augStatus === "succeeded" || augStatus === "failed") break
+        }
+        if (augStatus !== "succeeded") {
+          console.warn(`[new] augment ${augStatus ?? "timed out"} — proceeding with 1 image`)
+        }
       }
 
       setTrainingPhase("training")
       const trainRes = await fetch(`/api/characters/${characterId}/train`, { method: "POST" })
       const trainData = await trainRes.json()
-      if (!trainRes.ok) throw new Error(trainData.error ?? "Failed to start training")
+      if (!trainRes.ok) throw new Error(trainData.error ?? "We couldn't start training. Try again, and if it keeps happening, sign out and back in.")
 
       setTrainingJobId(trainData.job_id)
       setTrainingStatus("processing")
@@ -265,8 +285,9 @@ export default function NewCharacterPage() {
   }
 
   const filteredVoices = PRESET_VOICES.filter((v) => {
+    if (v.language !== voiceLanguage) return false
     if (voiceGender !== "all" && v.gender !== voiceGender) return false
-    if (voiceAccent !== "all" && v.accent !== voiceAccent) return false
+    if (voiceLanguage === "en" && voiceAccent !== "all" && v.accent !== voiceAccent) return false
     return true
   })
 
@@ -583,17 +604,31 @@ export default function NewCharacterPage() {
                 ))}
               </div>
               <div className="flex rounded-lg border border-zinc-200 overflow-hidden text-sm">
-                {(["all", "american", "british"] as const).map((a) => (
+                {(["en", "hi", "es"] as const).map((l) => (
                   <button
-                    key={a}
+                    key={l}
                     type="button"
-                    onClick={() => setVoiceAccent(a)}
-                    className={`px-3 py-1.5 transition-colors ${voiceAccent === a ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
+                    onClick={() => setVoiceLanguage(l)}
+                    className={`px-3 py-1.5 transition-colors ${voiceLanguage === l ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
                   >
-                    {a === "all" ? "Any accent" : a === "american" ? "American" : "British"}
+                    {l === "en" ? "English" : l === "hi" ? "हिन्दी" : "Español"}
                   </button>
                 ))}
               </div>
+              {voiceLanguage === "en" && (
+                <div className="flex rounded-lg border border-zinc-200 overflow-hidden text-sm">
+                  {(["all", "american", "british"] as const).map((a) => (
+                    <button
+                      key={a}
+                      type="button"
+                      onClick={() => setVoiceAccent(a)}
+                      className={`px-3 py-1.5 transition-colors ${voiceAccent === a ? "bg-violet-600 text-white" : "bg-white text-zinc-600 hover:bg-zinc-50"}`}
+                    >
+                      {a === "all" ? "Any accent" : a === "american" ? "American" : "British"}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Voice grid */}
@@ -611,7 +646,7 @@ export default function NewCharacterPage() {
                 >
                   <p className="font-semibold text-zinc-900 text-sm">{v.label}</p>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    {v.description} · {v.gender === "female" ? "Female" : "Male"} · {v.accent === "american" ? "American" : "British"}
+                    {v.description} · {v.gender === "female" ? "Female" : "Male"} · {v.accent === "american" ? "American" : v.accent === "british" ? "British" : v.accent === "indian" ? "Indian" : "Spanish"}
                   </p>
                 </button>
               ))}

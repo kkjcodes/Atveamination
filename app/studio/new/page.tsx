@@ -126,6 +126,8 @@ function StartModal({
   open,
   title,
   onTitleChange,
+  language,
+  onLanguageChange,
   selectedCharIds,
   onSelectedCharIdsChange,
   allUserChars,
@@ -135,6 +137,8 @@ function StartModal({
   open: boolean
   title: string
   onTitleChange: (t: string) => void
+  language: "en" | "hi" | "es"
+  onLanguageChange: (l: "en" | "hi" | "es") => void
   selectedCharIds: string[]
   onSelectedCharIdsChange: (ids: string[]) => void
   allUserChars: CharSummary[]
@@ -213,11 +217,16 @@ function StartModal({
           style: primaryStyle,
           num_scenes: numScenes,
           character_names: selectedChars.map((c) => c.name),
+          language,
         }),
       })
       const data = await res.json()
       if (!res.ok) {
         if (res.status === 429 && data.resetsAt) {
+          // Date.now() is fine here — this runs inside a click-triggered
+          // async callback, not during render. ESLint's react-hooks/purity
+          // rule is over-eager.
+          // eslint-disable-next-line react-hooks/purity
           const h = Math.ceil((new Date(data.resetsAt).getTime() - Date.now()) / 3600000)
           throw new Error(`${data.error} (${data.used}/${data.limit} used · resets in ${h <= 1 ? "<1h" : `${h}h`})`)
         }
@@ -292,7 +301,32 @@ function StartModal({
           <div className="rounded-xl border border-violet-200 bg-violet-50 p-5 space-y-4">
             <div className="flex items-center gap-2">
               <SparkleIcon className="w-4 h-4 text-violet-500 shrink-0" />
-              <p className="text-sm font-semibold text-violet-800">Generate your script with AI</p>
+              <p className="text-sm font-semibold text-violet-800">Let AI write the script</p>
+            </div>
+
+            <div>
+              <Label className="text-xs font-medium text-zinc-600 mb-1.5 block">Voice language</Label>
+              <div className="flex gap-2">
+                {([
+                  { code: "en" as const, label: "English" },
+                  { code: "hi" as const, label: "हिन्दी" },
+                  { code: "es" as const, label: "Español" },
+                ]).map((opt) => (
+                  <button
+                    key={opt.code}
+                    type="button"
+                    onClick={() => onLanguageChange(opt.code)}
+                    disabled={loading}
+                    className={`h-8 px-3 text-sm rounded-lg border font-medium transition-colors ${
+                      language === opt.code
+                        ? "bg-violet-600 text-white border-violet-600"
+                        : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
+                    } disabled:opacity-50`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div>
@@ -352,7 +386,7 @@ function StartModal({
         <div className="px-7 pb-4">
           <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-sm font-semibold text-zinc-700">No script? Pick preset scenes</p>
+              <p className="text-sm font-semibold text-zinc-700">Prefer to pick a ready-made scene?</p>
               <button
                 type="button"
                 onClick={() => setShowPresets(!showPresets)}
@@ -451,12 +485,40 @@ function StudioContent() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const [selectedCharIds, setSelectedCharIds] = useState<string[]>(initialCharIds)
+  // H3 (review): drafts before ensureProject() runs live only in React state
+  // and are lost on refresh. Persist to localStorage; clear once the project
+  // is created (server-side state takes over from there). Loaded ONCE via
+  // lazy useState initializer — was called every render in the previous
+  // implementation, which parses JSON on every keystroke.
+  const DRAFT_KEY = "atve-studio-draft-v1"
+  type StudioDraft = {
+    title?: string
+    language?: "en" | "hi" | "es"
+    scenes?: LocalScene[]
+    selectedCharIds?: string[]
+  }
+  function readDraft(): StudioDraft {
+    if (typeof window === "undefined") return {}
+    try {
+      const raw = window.localStorage.getItem(DRAFT_KEY)
+      return raw ? (JSON.parse(raw) as StudioDraft) : {}
+    } catch {
+      return {}
+    }
+  }
+
+  // URL params win over draft (fresh entry from the character page with a
+  // specific character selected should not resurrect an unrelated draft's
+  // cast). Fall back to draft only when the URL didn't specify.
+  const [selectedCharIds, setSelectedCharIds] = useState<string[]>(() =>
+    initialCharIds.length > 0 ? initialCharIds : (readDraft().selectedCharIds ?? [])
+  )
   const [allUserChars, setAllUserChars] = useState<CharSummary[]>([])
   const [charsLoading, setCharsLoading] = useState(true)
 
-  const [title, setTitle] = useState("Untitled Video")
-  const [scenes, setScenes] = useState<LocalScene[]>([makeLocalScene()])
+  const [title, setTitle] = useState<string>(() => readDraft().title ?? "Untitled Video")
+  const [language, setLanguage] = useState<"en" | "hi" | "es">(() => readDraft().language ?? "en")
+  const [scenes, setScenes] = useState<LocalScene[]>(() => readDraft().scenes ?? [makeLocalScene()])
   const [projectId, setProjectId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [currentSceneIndex, setCurrentSceneIndex] = useState<number | null>(null)
@@ -474,6 +536,25 @@ function StudioContent() {
 
   const selectedCharIdsRef = useRef(selectedCharIds)
   useEffect(() => { selectedCharIdsRef.current = selectedCharIds }, [selectedCharIds])
+
+  // Auto-save pre-project draft to localStorage. Clears once ensureProject
+  // creates a real DB row — server-side state is authoritative from there.
+  useEffect(() => {
+    if (projectId) return
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({ title, language, scenes, selectedCharIds }),
+      )
+    } catch { /* quota exceeded / private mode — nothing we can do */ }
+  }, [projectId, title, language, scenes, selectedCharIds])
+
+  useEffect(() => {
+    if (!projectId) return
+    if (typeof window === "undefined") return
+    try { window.localStorage.removeItem(DRAFT_KEY) } catch { /* ignore */ }
+  }, [projectId])
 
   type UsageLimits = { used: number; limit: number | null; resetsAt: string | null; unlimited: boolean }
   const [sceneUsage, setSceneUsage] = useState<UsageLimits | null>(null)
@@ -526,7 +607,14 @@ function StudioContent() {
   const deleteScene = useCallback(async (index: number) => {
     const scene = scenesRef.current[index]
     if (scene?.id) {
-      fetch(`/api/scenes/${scene.id}`, { method: "DELETE" }).catch(() => {})
+      // Verify the server delete succeeded before removing from local state.
+      // Old code fired-and-forgot the DELETE and always removed locally —
+      // a failed delete left an orphan row and the user thought it was gone.
+      const res = await fetch(`/api/scenes/${scene.id}`, { method: "DELETE" }).catch(() => null)
+      if (!res || !res.ok) {
+        setError("Couldn't delete this scene. Try again.")
+        return
+      }
     }
     setScenes((prev) => prev.filter((_, i) => i !== index))
   }, [])
@@ -542,7 +630,7 @@ function StudioContent() {
     let resolvedVoiceId = voiceId
     if (charIds.length > 0) {
       const results = await Promise.allSettled(
-        charIds.map((id) => fetch(`/api/characters/${id}/auto-voice`, { method: "POST" }).then((r) => r.json()))
+        charIds.map((id) => fetch(`/api/characters/${id}/auto-voice?language=${language}`, { method: "POST" }).then((r) => r.json()))
       )
       const firstSuccess = results.find((r) => r.status === "fulfilled" && r.value?.voiceId)
       if (!resolvedVoiceId && firstSuccess?.status === "fulfilled") {
@@ -556,7 +644,7 @@ function StudioContent() {
     const res = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ character_ids: charIds, voice_id: resolvedVoiceId, title }),
+      body: JSON.stringify({ character_ids: charIds, voice_id: resolvedVoiceId, title, language }),
     })
     if (!res.ok) {
       const data = await res.json()
@@ -566,7 +654,7 @@ function StudioContent() {
     projectIdRef.current = project.id
     setProjectId(project.id)
     return project.id
-  }, [voiceId, title])
+  }, [voiceId, title, language])
 
   const pollScene = useCallback(async (sceneId: string): Promise<Scene> => {
     while (true) {
@@ -657,6 +745,10 @@ function StudioContent() {
 
       const genRes = await fetch(`/api/scenes/${sceneId}/generate`, { method: "POST" })
       if (!genRes.ok) {
+        // Parse ONCE — old code called genRes.json() twice which is illegal
+        // on the fetch Response (body is already-consumed), so the second
+        // call throws and we lost the moderation/provider error message and
+        // showed a generic "Generation failed".
         const data = await genRes.json().catch(() => ({}))
         if (genRes.status === 429) {
           setError(`Daily scene limit reached (${data.used ?? "?"}/${data.limit ?? "?"}). ${formatReset(data.resetsAt)}`)
@@ -664,8 +756,9 @@ function StudioContent() {
           updateScene(index, { status: "idle" })
           return "limit"
         }
-        const msg = (await genRes.json().catch(() => ({})) as { error?: string }).error
-        setError(msg ?? "Generation failed")
+        // Preserve the server's error (moderation refusal, missing field, etc.)
+        const msg = (data as { error?: string }).error
+        setError(msg ? `${msg} (Scene ${index + 1})` : `Couldn't generate scene ${index + 1}. Try again or edit the description.`)
         updateScene(index, { status: "failed" })
         return "failed"
       }
@@ -1134,6 +1227,8 @@ function StudioContent() {
         open={startModalOpen}
         title={title}
         onTitleChange={setTitle}
+        language={language}
+        onLanguageChange={setLanguage}
         selectedCharIds={selectedCharIds}
         onSelectedCharIdsChange={setSelectedCharIds}
         allUserChars={allUserChars}
@@ -1253,10 +1348,11 @@ function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, on
               {(() => {
                 const text = (scene.voiceScript || scene.description).trim()
                 const words = text ? text.split(/\s+/).length : 0
-                const estSecs = words / 2.2
-                return estSecs > 6.5 ? (
+                const estSecs = words / 2.5
+                const budgetSec = scene.durationSeconds ?? 6
+                return estSecs > budgetSec * 1.05 ? (
                   <p className="text-xs text-amber-600 mt-1">
-                    ~{Math.round(estSecs)}s of narration for a ~6s clip — audio will fade out to fit.
+                    ~{Math.round(estSecs)}s of narration for a {budgetSec}s clip — will be sped up ({Math.round((estSecs / budgetSec) * 100)}% speed) to fit.
                   </p>
                 ) : null
               })()}
@@ -1264,8 +1360,31 @@ function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, on
 
             <div>
               <Label className="text-xs text-zinc-500 mb-1 block">Clip length</Label>
-              <p className="text-xs text-zinc-600 font-medium">~6 seconds</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Longer clips coming soon</p>
+              <div className="flex gap-1.5">
+                {([5, 10, 15] as const).map((d) => {
+                  const selected = (scene.durationSeconds ?? 5) === d
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => onUpdate({ durationSeconds: d })}
+                      disabled={isProcessing}
+                      className={`px-2.5 py-1 text-xs rounded-md border font-medium transition-colors ${
+                        selected
+                          ? "bg-violet-600 text-white border-violet-600"
+                          : "bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50"
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
+                      {d}s
+                    </button>
+                  )
+                })}
+              </div>
+              {(scene.durationSeconds ?? 5) > 6 && (
+                <p className="text-xs text-zinc-400 mt-1">
+                  Uses {(scene.durationSeconds ?? 5) === 15 ? "3" : "2"} clips
+                </p>
+              )}
             </div>
           </div>
         </div>

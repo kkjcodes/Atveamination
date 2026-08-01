@@ -12,12 +12,36 @@ enum UserRole {
   ADMIN
 }
 
+// Which "door" the user picked at the landing fork. Null = hasn't picked yet
+// (existing users default here until first landing visit post-M1). "both" is
+// set automatically when a family user starts a business flow or vice versa.
+enum UserSegment {
+  family
+  business
+  both
+}
+
+// One row per uploaded/generated binary asset. Replaces the pattern of
+// scattering blob URLs across feature tables. Existing feature tables keep
+// their inline URL columns for back-compat; new features use Asset FKs.
+enum AssetKind {
+  product_photo
+  logo
+  render
+  keyframe
+  source_photo
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
   password  String
   name      String?
   role                UserRole  @default(FREE)
+  // Landing fork picker: which door user chose. Null until first pick;
+  // segment_picked_at records when the choice was made (analytics + resumability).
+  segment             UserSegment?
+  segmentPickedAt     DateTime? @map("segment_picked_at")
   passwordResetToken  String?   @map("password_reset_token")
   passwordResetExpiry DateTime? @map("password_reset_expiry")
   createdAt           DateTime  @default(now()) @map("created_at")
@@ -26,8 +50,122 @@ model User {
   voices     Voice[]
   projects   Project[]
   jobs       Job[]
+  scrapbookProjects ScrapbookProject[]
+  assets            Asset[]
+  businesses        Business[]
 
   @@map("users")
+}
+
+model Asset {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  kind         AssetKind
+  // Public URL for direct access (Azure Blob access:"blob" public-read).
+  url          String
+  // Blob path relative to container (for future SAS-token migration).
+  blobPath     String    @map("blob_path")
+  mimeType     String    @map("mime_type")
+  sizeBytes    Int       @map("size_bytes")
+  // Arbitrary per-kind metadata: {width, height} for images, {durationSec,
+  // fps} for video, {sha256} for tts-cache lookups, etc.
+  meta         Json?
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessesAsLogo Business[] @relation("BusinessLogo")
+
+  @@index([userId, kind, createdAt])
+  @@map("assets")
+}
+
+model Business {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  name         String   @default("")
+  oneLiner     String   @default("") @map("one_liner")
+  address      String?
+  notes        String?
+  logoAssetId  String?  @map("logo_asset_id")
+  // Draft = incomplete onboarding; ready = photos+one-liner saved and eligible
+  // for AdScript generation. Used by /business landing to route users back to
+  // whatever stage they left (resumability).
+  status       String   @default("draft") // draft | ready | archived
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logo Asset?  @relation("BusinessLogo", fields: [logoAssetId], references: [id], onDelete: SetNull)
+  ads  Ad[]
+
+  @@index([userId, updatedAt])
+  @@map("businesses")
+}
+
+// One Ad per (Business, "creative concept"). Iteration produces AdVersions —
+// the Ad row's currentVersion pointer tells us which AdVersion is "live".
+// Ads.status advances as we generate/render; failed lets users retry without
+// starting from scratch (resumability).
+model Ad {
+  id             String   @id @default(uuid())
+  businessId     String   @map("business_id")
+  status         String   @default("draft") // draft | rendering | ready | failed
+  templateFamily String   @map("template_family")   // clean_modern | bold_promo | scrapbook
+  aspectRatio    String   @map("aspect_ratio")       // 9:16 | 1:1 | 16:9
+  // Cached copy of the current AdVersion's script for quick read; source of
+  // truth still lives on AdVersion so history stays intact.
+  adScript       Json?    @map("ad_script")
+  currentVersion Int      @default(0) @map("current_version")
+  galleryOptIn   Boolean  @default(false) @map("gallery_opt_in")
+  preferredVoice String?  @map("preferred_voice")
+  renderStartedAt      DateTime? @map("render_started_at")
+  renderFailureCode    String?   @map("render_failure_code")
+  renderFailureMessage String?   @map("render_failure_message")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  business Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  versions AdVersion[]
+
+  @@index([businessId, updatedAt])
+  @@map("ads")
+}
+
+// Per-content-hash lookup for TTS output. Keyed by sha256(engine|voice|text).
+// One row per unique (engine, voice, text) combination, globally shared —
+// two different users saying "Fresh bread every morning" get one synth.
+// Cache hits skip the fal call entirely; misses upload to blob + store.
+model TtsCache {
+  contentHash  String   @id @map("content_hash")
+  engine       String   // "kokoro" for M3b; leave room for tts-1 later
+  voiceId      String   @map("voice_id")
+  text         String   @db.Text
+  audioUrl     String   @map("audio_url")
+  blobPath     String   @map("blob_path")
+  durationSec  Float    @map("duration_sec")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([engine, voiceId])
+  @@map("tts_cache")
+}
+
+// Append-only iteration history: every edit request creates a new row.
+// This gives free "revert to version N" (via copy-forward) and is the data
+// behind the "median iterations per ad" health metric.
+model AdVersion {
+  id             String   @id @default(uuid())
+  adId           String   @map("ad_id")
+  versionNo      Int      @map("version_no")
+  adScript       Json     @map("ad_script")
+  editRequest    String?  @map("edit_request")
+  renderAssetId  String?  @map("render_asset_id")  // FK-by-string to Asset.id
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  ad Ad @relation(fields: [adId], references: [id], onDelete: Cascade)
+
+  @@unique([adId, versionNo])
+  @@index([adId, createdAt])
+  @@map("ad_versions")
 }
 
 model Character {
@@ -40,14 +178,21 @@ model Character {
   selectedStyle      String?  @map("selected_style")
   trainingImages     Json?    @map("training_images")
   augmentStatus      String?  @map("augment_status")
+  augmentStartedAt   DateTime? @map("augment_started_at")
+  augmentFailureCode    String? @map("augment_failure_code")
+  augmentFailureMessage String? @map("augment_failure_message")
   loraVersion        String?  @map("lora_version")
   loraTrainingStatus String?  @map("lora_training_status")
+  trainStartedAt     DateTime? @map("train_started_at")
+  trainFailureCode      String? @map("train_failure_code")
+  trainFailureMessage   String? @map("train_failure_message")
   createdAt          DateTime @default(now()) @map("created_at")
 
   user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   options CharacterOption[]
   voices  Voice[]
   projectCharacters ProjectCharacter[]
+  scrapbookPages    ScrapbookPage[]
 
   @@map("characters")
 }
@@ -91,6 +236,10 @@ model Project {
   // Injected into prompts for scenes 1-N to keep clothing/hair/accessories
   // consistent across the video. Null until scene 0 image is generated.
   firstFrameDescription String?  @map("first_frame_description")
+  // ISO 639-1 code: "en" | "hi" | "es". Drives brief-generation language,
+  // language-aware voice picking, and the language param passed to XTTS-v2.
+  // Image prompts stay English regardless (Flux/Kontext are English-trained).
+  language              String   @default("en")
   createdAt             DateTime @default(now()) @map("created_at")
 
   user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -131,6 +280,17 @@ model Scene {
   audioUrl        String?  @map("audio_url")
   videoClipUrl    String?  @map("video_clip_url")
   durationSeconds Int?     @map("duration_seconds")
+  // WAN i2v caps at ~6s per call. Scenes at 10s/15s durations need multiple
+  // chunks chained via last-frame extraction. chunkCount is the total planned;
+  // chunkUrls is filled in order as each WAN call completes. When
+  // chunkUrls.length === chunkCount, all chunks are concatenated into
+  // videoClipUrl. Single-chunk scenes (≤6s) keep chunkCount=1 and don't use
+  // chunkUrls — same behavior as before.
+  videoChunkUrls    Json?    @map("video_chunk_urls")
+  videoChunkCount   Int?     @default(1) @map("video_chunk_count")
+  // Sanitized WAN prompt cached at chunk-1 submission time so chunks 2/3 use
+  // the identical string (moderation output isn't strictly deterministic).
+  videoPrompt       String?  @map("video_prompt")
   focusCharacterId String? @map("focus_character_id")
   // Which character delivers this scene's voice_script line. Distinct from
   // focusCharacterId: a scene can be visually focused on Kirti (she's
@@ -143,6 +303,20 @@ model Scene {
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("scenes")
+}
+
+// Per-event append-only stream. Emitted by lib/events.ts across every flow.
+// userId nullable so anonymous events (landing door click) still record.
+model Event {
+  id        String   @id @default(uuid())
+  userId    String?  @map("user_id")
+  name      String
+  props     Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([name, createdAt])
+  @@index([userId, createdAt])
+  @@map("events")
 }
 
 model Job {
@@ -160,4 +334,63 @@ model Job {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("jobs")
+}
+
+// ── Scrapbook video pipeline ────────────────────────────────────────────────
+// Fundamentally distinct from Project/Scene: photo-in, silent-scrapbook-out,
+// no LoRA training, no voice, no characters as speakers. Style is a single
+// choice for the whole video ("watercolor" | "pixar" | "crayon").
+
+model ScrapbookProject {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  title          String   @default("Untitled Scrapbook")
+  style          String   @default("watercolor")
+  status         String   @default("draft") // draft | generating | done | failed
+  finalVideoUrl  String?  @map("final_video_url")
+  totalCostUsd   Float    @default(0) @map("total_cost_usd")
+  createdAt      DateTime @default(now()) @map("created_at")
+  stitchStartedAt DateTime? @map("stitch_started_at")
+  stitchFailureCode    String? @map("stitch_failure_code")
+  stitchFailureMessage String? @map("stitch_failure_message")
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pages ScrapbookPage[]
+
+  @@map("scrapbook_projects")
+}
+
+model ScrapbookPage {
+  id                String   @id @default(uuid())
+  projectId         String   @map("project_id")
+  orderIndex        Int      @default(0) @map("order_index")
+  // Source photo: either freshly uploaded (characterId null) or reused from
+  // an existing Character in the user's library (characterId set → we copy
+  // character.sourcePhotoUrl onto sourcePhotoUrl for a stable reference).
+  characterId       String?  @map("character_id")
+  sourcePhotoUrl    String   @map("source_photo_url")
+  shotPlan          Json?    @map("shot_plan")             // ShotPlan from Sonnet
+  caption           String   @default("") // extracted from shotPlan for easy display
+  beforeKeyframeUrl String?  @map("before_keyframe_url")
+  afterKeyframeUrl  String?  @map("after_keyframe_url")
+  // "subtle" (RIFE) | "dynamic" (WAN FLF2V) | "fallback" (Ken Burns).
+  // Null until vision stage classifies.
+  route             String?
+  motionPredictionId String? @map("motion_prediction_id")  // "sb:<fal-request-id>"
+  rawClipUrl        String?  @map("raw_clip_url")
+  qcResult          Json?    @map("qc_result")
+  pageVideoUrl      String?  @map("page_video_url")        // composited page clip
+  usedFallback      Boolean  @default(false) @map("used_fallback")
+  costUsd           Float    @default(0) @map("cost_usd")
+  // vision | before | after | motion | qc | assembling | done | failed
+  generationPhase   String?  @map("generation_phase")
+  generationStartedAt    DateTime? @map("generation_started_at")
+  generationFailureCode    String? @map("generation_failure_code")
+  generationFailureMessage String? @map("generation_failure_message")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  project   ScrapbookProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  character Character?       @relation(fields: [characterId], references: [id], onDelete: SetNull)
+
+  @@map("scrapbook_pages")
 }

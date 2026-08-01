@@ -4,6 +4,15 @@ import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { anthropic, BRIEF_MODEL } from "@/lib/ai/client"
 
+// Per-language gender → Kokoro preset map. Picks a sensible default voice for
+// each (language, gender) combination so auto-matching works the same way for
+// every supported language. Add new languages here when expanding the catalog.
+const VOICE_DEFAULTS: Record<string, { male: string; female: string }> = {
+  en: { male: "am_michael", female: "af_heart" },
+  hi: { male: "hm_omega",   female: "hf_alpha" },
+  es: { male: "em_alex",    female: "ef_dora"  },
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const session = await getServerSession(authOptions)
@@ -13,10 +22,32 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const character = await prisma.character.findFirst({ where: { id, userId } })
   if (!character) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
-  const existing = await prisma.voice.findFirst({ where: { characterId: id, userId } })
-  if (existing) return NextResponse.json({ voiceId: existing.id })
+  // Language preference: from query string (?language=hi) or POST body. Defaults
+  // to English. Validated against the supported set; unknown codes fall back to en.
+  const url = new URL(req.url)
+  let lang = (url.searchParams.get("language") ?? "").trim()
+  if (!lang) {
+    try {
+      const body = await req.json() as { language?: string }
+      lang = body?.language ?? ""
+    } catch {
+      // empty/non-JSON body is fine
+    }
+  }
+  if (lang !== "hi" && lang !== "es") lang = "en"
+  const defaults = VOICE_DEFAULTS[lang]
 
-  let kokoroVoice = "af_heart"
+  // An existing voice in the right language is reused. Voices in another
+  // language are NOT reused — caller asked for `lang`, give them `lang`.
+  const existingVoices = await prisma.voice.findMany({ where: { characterId: id, userId } })
+  const langPrefix = lang.charAt(0)
+  const existingForLang = existingVoices.find((v) => {
+    const kv = (v.ttsParams as { kokoroVoice?: string } | null)?.kokoroVoice
+    return typeof kv === "string" && kv.startsWith(langPrefix)
+  })
+  if (existingForLang) return NextResponse.json({ voiceId: existingForLang.id })
+
+  let kokoroVoice = defaults.female
   if (character.selectedStyleUrl) {
     try {
       const imgRes = await fetch(character.selectedStyleUrl)
@@ -35,7 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         }],
       })
       const gender = (msg.content[0] as { type: "text"; text: string }).text.trim().toLowerCase()
-      kokoroVoice = gender.startsWith("male") ? "am_michael" : "af_heart"
+      kokoroVoice = gender.startsWith("male") ? defaults.male : defaults.female
     } catch (e) {
       console.error("[auto-voice] gender detection failed:", (e as Error)?.message)
     }

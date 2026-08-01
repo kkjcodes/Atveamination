@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { brief, style, num_scenes, character_names } = await req.json()
+  const { brief, style, num_scenes, character_names, language } = await req.json()
   if (!brief?.trim()) return NextResponse.json({ error: "brief is required" }, { status: 400 })
 
   const numScenes = Math.max(1, Math.min(10, Number(num_scenes) || 5))
@@ -38,6 +38,21 @@ export async function POST(req: NextRequest) {
     : names.length === 1
       ? `Main character: ${names[0]}.`
       : ""
+
+  // Image gen stays English (Flux/Kontext are English-trained); only voice_script
+  // switches to the target language.
+  const lang = language === "hi" || language === "es" ? language : "en"
+  const langName = lang === "hi" ? "Hindi" : lang === "es" ? "Spanish" : "English"
+  // Kokoro speaks at ~2.5 words/sec. voice_script gets rendered to audio and
+  // played over the video clip — if the audio is longer than the clip, it
+  // gets cut off. Force the model to keep each line within budget for its
+  // chosen duration. Hindi/Spanish are slightly slower phonetically, so we
+  // shave a bit off the budget.
+  const wordsPerSecond = lang === "en" ? 2.5 : 2.2
+  const budgetLine = `The voice_script will be read aloud at ${wordsPerSecond} words/second. STRICT RULE: keep voice_script within its per-duration word budget: 5s ≤ ${Math.floor(5 * wordsPerSecond)} words, 10s ≤ ${Math.floor(10 * wordsPerSecond)} words, 15s ≤ ${Math.floor(15 * wordsPerSecond)} words. Shorter is fine; longer will be cut off. Pick a duration that fits the line you want to write.`
+  const voiceLangLine = lang === "en"
+    ? `- voice_script (short, natural, conversational): what the character says or narrates.`
+    : `- voice_script (short, natural, conversational): what the character says or narrates. Write this field in ${langName} (use native script). The 'description' field must remain in English.`
 
   const message = await anthropic.messages.create({
     model: BRIEF_MODEL,
@@ -52,11 +67,13 @@ ${castLine}
 
 BRIEF: "${brief.trim()}"
 
+${budgetLine}
+
 For each scene write:
 - description (2-3 sentences): vivid, specific visual details — the character's pose and action, the setting, lighting, mood. Be concrete and visual, not abstract. When multiple characters are present, name them in the description.
-- voice_script (1-2 short sentences): what the character says or narrates, natural and conversational tone.
+${voiceLangLine}
 - speaker: ${names.length > 1 ? `which character delivers the voice_script line — must be one of: ${names.join(", ")}. Choose the character whose dialogue this is. For narration with no clear speaker, choose the most prominent character in the scene.` : `omit this field, single-character project.`}
-- duration_seconds: 5 (quick moment), 10 (standard action), or 15 (longer sequence with more happening).
+- duration_seconds: 5 (quick moment, ≤${Math.floor(5 * wordsPerSecond)} words), 10 (standard action, ≤${Math.floor(10 * wordsPerSecond)} words), or 15 (longer sequence, ≤${Math.floor(15 * wordsPerSecond)} words).
 
 Return ONLY a valid JSON array, no markdown fences or extra text:
 [{"description":"...","voice_script":"...","speaker":"...","duration_seconds":5}]`,

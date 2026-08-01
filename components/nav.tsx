@@ -24,6 +24,12 @@ export default function Nav({ breadcrumbs }: { breadcrumbs?: Crumb[] }) {
                 <Link href="/dashboard">Dashboard</Link>
               </Button>
               <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+                <Link href="/scrapbook">Scrapbook</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+                <Link href="/business">Business</Link>
+              </Button>
+              <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
                 <Link href="/help">Help</Link>
               </Button>
               <Button variant="outline" size="sm" onClick={() => signOut()}>

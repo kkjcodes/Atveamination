@@ -60,8 +60,10 @@ const SOURCE_ANCHORED_VARIATIONS = [
   "Frontal portrait, soft natural expression, direct eye contact with viewer",
 ]
 
-// Extend timeout — generating 35 images takes 5-8 minutes
-export const maxDuration = 540
+// Fire-and-forget — 35 replicate.run calls take 100-200s and blow past
+// Cloudflare's 100s origin timeout. Returns 202 immediately; client polls
+// GET /api/characters/[id] for augmentStatus.
+export const maxDuration = 30
 
 async function toDataUri(url: string): Promise<string> {
   const res = await fetch(url)
@@ -82,85 +84,126 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Select a style before generating training data" }, { status: 400 })
   }
 
-  await prisma.character.update({ where: { id }, data: { augmentStatus: "processing" } })
-
-  let styleDataUri: string
-  let sourceDataUri: string
-  try {
-    [styleDataUri, sourceDataUri] = await Promise.all([
-      toDataUri(character.selectedStyleUrl),
-      toDataUri(character.sourcePhotoUrl),
-    ])
-  } catch {
-    await prisma.character.update({ where: { id }, data: { augmentStatus: "failed" } })
-    return NextResponse.json({ error: "Could not load reference images" }, { status: 500 })
+  // Stale-recovery window: 35-image augmentation takes 2-5 min in practice.
+  // 15 min gives comfortable slack; anything older was killed by a container
+  // restart (SIGTERM on deploy / scale-down) and the row should be reclaimable.
+  const STALE_AUGMENT_MS = 15 * 60 * 1000
+  const isFreshProcessing =
+    character.augmentStatus === "processing" &&
+    character.augmentStartedAt !== null &&
+    Date.now() - character.augmentStartedAt.getTime() < STALE_AUGMENT_MS
+  if (isFreshProcessing) {
+    return NextResponse.json({ error: "Augmentation already in progress" }, { status: 409 })
   }
 
-  const urls: string[] = []
-  const BATCH = 5
-
-  // Inject the character's visual description into every prompt so each
-  // augmentation reinforces identity-critical features (glasses, stubble,
-  // bindi, etc) instead of letting Kontext Pro drift one variation at a time.
-  const charDesc = character.characterDescription?.trim()
-  const charAnchor = charDesc ? `The person is: ${charDesc}. ` : ""
-
-  // 20 pose/expression variations anchored on the cartoon style image
-  for (let i = 0; i < AUGMENTATION_PROMPTS.length; i += BATCH) {
-    const batch = AUGMENTATION_PROMPTS.slice(i, i + BATCH)
-    const results = await Promise.allSettled(
-      batch.map(async (prompt, j) => {
-        const output = await replicate.run(MODELS.fluxKontextPro, {
-          input: { prompt: `${charAnchor}${prompt}`, input_image: styleDataUri, aspect_ratio: "1:1", output_format: "jpg" },
-        })
-        const raw = Array.isArray(output) ? String(output[0]) : String(output)
-        return mirrorUrlToBlob(raw, `characters/${id}/training/${i + j}.jpg`)
-      })
-    )
-    for (const r of results) {
-      if (r.status === "fulfilled") urls.push(r.value)
-      else console.warn("[augment] style-anchored image failed:", (r.reason as Error)?.message)
-    }
-  }
-
-  // 15 cartoon variations anchored on the SOURCE selfie — single Kontext Pro pass
-  // from real face preserves identity much better than double-pass through cartoon
-  // style. Batched the same way as style-anchored to stay under Replicate rate limits.
-  const stylePrompt = CARTOON_STYLE_PROMPTS[character.selectedStyle ?? "pixar"] ?? CARTOON_STYLE_PROMPTS.pixar
-  for (let i = 0; i < SOURCE_ANCHORED_VARIATIONS.length; i += BATCH) {
-    const batch = SOURCE_ANCHORED_VARIATIONS.slice(i, i + BATCH)
-    const sourceResults = await Promise.allSettled(
-      batch.map(async (variation, j) => {
-        const output = await replicate.run(MODELS.fluxKontextPro, {
-          input: {
-            prompt: `${charAnchor}${stylePrompt} ${variation}.`,
-            input_image: sourceDataUri,
-            aspect_ratio: "1:1",
-            output_format: "jpg",
-          },
-        })
-        const raw = Array.isArray(output) ? String(output[0]) : String(output)
-        return mirrorUrlToBlob(raw, `characters/${id}/training/source_${i + j}.jpg`)
-      })
-    )
-    for (const r of sourceResults) {
-      if (r.status === "fulfilled") urls.push(r.value)
-      else console.warn("[augment] source-anchored image failed:", (r.reason as Error)?.message)
-    }
-  }
-
-  if (urls.length < 10) {
-    await prisma.character.update({ where: { id }, data: { augmentStatus: "failed" } })
-    return NextResponse.json(
-      { error: `Only ${urls.length}/35 images succeeded — need at least 10` },
-      { status: 500 }
-    )
-  }
-
-  await prisma.character.update({
-    where: { id },
-    data: { trainingImages: urls, augmentStatus: "succeeded" },
+  // Optimistic lock — claim anything non-processing OR stale-processing.
+  // isFreshProcessing above already rejected the fresh-in-flight case, so
+  // whatever's left here is safe to overwrite.
+  const staleThreshold = new Date(Date.now() - STALE_AUGMENT_MS)
+  const claimed = await prisma.character.updateMany({
+    where: {
+      id,
+      userId,
+      OR: [
+        { augmentStatus: null },
+        { augmentStatus: { in: ["failed", "succeeded"] } },
+        { augmentStartedAt: { lt: staleThreshold } },
+        { AND: [{ augmentStatus: "processing" }, { augmentStartedAt: null }] },
+      ],
+    },
+    data: { augmentStatus: "processing", augmentStartedAt: new Date() },
   })
+  if (claimed.count === 0) {
+    return NextResponse.json({ error: "Augmentation already in progress" }, { status: 409 })
+  }
 
-  return NextResponse.json({ count: urls.length })
+  const augmentStart = Date.now()
+  console.log(`[augment] KICKOFF character=${id}`)
+
+  // Fire-and-forget. Runs 35 replicate.run calls; total 100-200s, well past
+  // Cloudflare's 100s origin timeout, so it must never block the response.
+  // Client polls GET /api/characters/[id] for augmentStatus transition.
+  void (async () => {
+    try {
+      const [styleDataUri, sourceDataUri] = await Promise.all([
+        toDataUri(character.selectedStyleUrl!),
+        toDataUri(character.sourcePhotoUrl),
+      ])
+
+      const urls: string[] = []
+      const BATCH = 5
+
+      // Inject the character's visual description into every prompt so each
+      // augmentation reinforces identity-critical features instead of letting
+      // Kontext Pro drift one variation at a time.
+      const charDesc = character.characterDescription?.trim()
+      const charAnchor = charDesc ? `The person is: ${charDesc}. ` : ""
+
+      for (let i = 0; i < AUGMENTATION_PROMPTS.length; i += BATCH) {
+        const batch = AUGMENTATION_PROMPTS.slice(i, i + BATCH)
+        const results = await Promise.allSettled(
+          batch.map(async (prompt, j) => {
+            const output = await replicate.run(MODELS.fluxKontextPro, {
+              input: { prompt: `${charAnchor}${prompt}`, input_image: styleDataUri, aspect_ratio: "1:1", output_format: "jpg" },
+            })
+            const raw = Array.isArray(output) ? String(output[0]) : String(output)
+            return mirrorUrlToBlob(raw, `characters/${id}/training/${i + j}.jpg`)
+          })
+        )
+        for (const r of results) {
+          if (r.status === "fulfilled") urls.push(r.value)
+          else console.warn("[augment] style-anchored image failed:", (r.reason as Error)?.message)
+        }
+      }
+
+      const stylePrompt = CARTOON_STYLE_PROMPTS[character.selectedStyle ?? "pixar"] ?? CARTOON_STYLE_PROMPTS.pixar
+      for (let i = 0; i < SOURCE_ANCHORED_VARIATIONS.length; i += BATCH) {
+        const batch = SOURCE_ANCHORED_VARIATIONS.slice(i, i + BATCH)
+        const sourceResults = await Promise.allSettled(
+          batch.map(async (variation, j) => {
+            const output = await replicate.run(MODELS.fluxKontextPro, {
+              input: {
+                prompt: `${charAnchor}${stylePrompt} ${variation}.`,
+                input_image: sourceDataUri,
+                aspect_ratio: "1:1",
+                output_format: "jpg",
+              },
+            })
+            const raw = Array.isArray(output) ? String(output[0]) : String(output)
+            return mirrorUrlToBlob(raw, `characters/${id}/training/source_${i + j}.jpg`)
+          })
+        )
+        for (const r of sourceResults) {
+          if (r.status === "fulfilled") urls.push(r.value)
+          else console.warn("[augment] source-anchored image failed:", (r.reason as Error)?.message)
+        }
+      }
+
+      // Clearing augmentStartedAt on terminal states matches the stale-recovery
+      // contract — "did this ever run?" (has startedAt) vs "is this stuck?"
+      // (has startedAt but processing older than window).
+      if (urls.length < 10) {
+        await prisma.character.update({
+          where: { id },
+          data: { augmentStatus: "failed", augmentStartedAt: null },
+        })
+        console.error(`[augment] FAILED character=${id} only ${urls.length}/35 images succeeded after ${Date.now() - augmentStart}ms`)
+        return
+      }
+
+      await prisma.character.update({
+        where: { id },
+        data: { trainingImages: urls, augmentStatus: "succeeded", augmentStartedAt: null },
+      })
+      console.log(`[augment] DONE character=${id} ${urls.length}/35 images ${Date.now() - augmentStart}ms`)
+    } catch (e) {
+      console.error(`[augment] unhandled character=${id} after ${Date.now() - augmentStart}ms:`, (e as Error)?.message)
+      await prisma.character.update({
+        where: { id },
+        data: { augmentStatus: "failed", augmentStartedAt: null },
+      }).catch(() => {})
+    }
+  })()
+
+  return NextResponse.json({ status: "processing", characterId: id }, { status: 202 })
 }

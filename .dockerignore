@@ -6,6 +6,31 @@ node_modules
 __tests__
 playwright-report
 test-results
+coverage
 README.md
 *.md
 !CLAUDE.md
+# Personal / never-in-container asset sources
+music/
+Images/
+images/
+Testing/
+Scrapbook Plan/
+docs/
+# Local tool state
+.claude/
+memory/
+.azure/
+.vscode/
+.idea/
+# Editor state / macOS
+.DS_Store
+# Certs / keys should never enter the build context
+*.pem
+*.key
+*.p12
+*.crt
+*.cer
+# Test result artifacts
+next-env.d.ts
+tsconfig.tsbuildinfo

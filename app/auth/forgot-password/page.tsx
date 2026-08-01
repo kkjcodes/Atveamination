@@ -47,9 +47,12 @@ export default function ForgotPasswordPage() {
           <CardContent>
             {sent ? (
               <div className="space-y-4 text-center">
-                <p className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  If that email exists, a reset link is on its way. Check your inbox.
-                </p>
+                <div role="status" className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  <p className="font-medium">If that email exists, a reset link is on its way.</p>
+                  <p className="mt-1 text-emerald-600 text-xs">
+                    If it doesn&apos;t arrive within a few minutes, check spam, verify the address, or email contact@atveanimation.com.
+                  </p>
+                </div>
                 <Link href="/auth/login" className="text-sm text-violet-600 hover:underline">
                   Back to sign in
                 </Link>

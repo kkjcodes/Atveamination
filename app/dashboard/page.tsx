@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import Nav from "@/components/nav"
+import { statusLabel } from "@/lib/copy"
 import DeleteButton from "@/components/delete-button"
 import ShareButtons from "@/components/share-buttons"
 
@@ -24,7 +25,10 @@ const STATUS_VARIANT: Record<TrainingStatus, "default" | "warning" | "success" |
 function statusBadge(status: string | null) {
   if (!status) return null
   const variant = STATUS_VARIANT[status as TrainingStatus] ?? "default"
-  return <Badge variant={variant}>{status}</Badge>
+  // User-facing vocabulary from lib/copy.ts — "processing"/"succeeded" are
+  // internal DB values and shouldn't leak into the UI.
+  const label = statusLabel(status)
+  return <Badge variant={variant}>{label}</Badge>
 }
 
 export default async function DashboardPage() {
@@ -61,7 +65,7 @@ export default async function DashboardPage() {
           <p className="text-2xl font-bold text-zinc-900">
             Welcome back, {displayName}
           </p>
-          <p className="mt-1 text-zinc-500">Here&apos;s everything you&apos;ve created.</p>
+          <p className="mt-1 text-zinc-500">Here&apos;s everything you&apos;ve made.</p>
         </div>
 
         {/* Characters */}
@@ -70,7 +74,7 @@ export default async function DashboardPage() {
             <div>
               <h2 className="text-xl font-semibold text-zinc-900">Characters</h2>
               {isUnlimited ? (
-                <p className="mt-0.5 text-sm font-medium text-violet-600">Unlimited characters — Super User</p>
+                <p className="mt-0.5 text-sm font-medium text-violet-600">Unlimited characters</p>
               ) : (
                 <p className="mt-0.5 text-sm text-zinc-500">
                   {characters.length} of {charLimit.limit} created
@@ -81,7 +85,7 @@ export default async function DashboardPage() {
               )}
             </div>
             <Button asChild size="sm" disabled={!isUnlimited && characters.length >= (charLimit.limit as number)}>
-              <Link href="/character/new">+ New Character</Link>
+              <Link href="/character/new">Add a character</Link>
             </Button>
           </div>
 
@@ -94,10 +98,10 @@ export default async function DashboardPage() {
               <div className="mb-5 flex items-center justify-between bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-xl px-5 py-4">
                 <div>
                   <p className="font-semibold text-orange-900 text-sm">You have {readyChars.length} characters ready</p>
-                  <p className="text-xs text-orange-700 mt-0.5">Put them all in one video — families, couples, friends</p>
+                  <p className="text-xs text-orange-700 mt-0.5">Put them all in one video together.</p>
                 </div>
                 <Button asChild size="sm" className="bg-orange-500 hover:bg-orange-600 text-white border-0 shrink-0 ml-4">
-                  <Link href={`/studio/new?characters=${ids}`}>Make Group Video</Link>
+                  <Link href={`/studio/new?characters=${ids}`}>Make a video with all of them</Link>
                 </Button>
               </div>
             )
@@ -107,12 +111,12 @@ export default async function DashboardPage() {
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center py-16 text-center">
                 <div className="mb-3 text-5xl">🎭</div>
-                <h3 className="mb-1 font-semibold text-zinc-900">No characters yet</h3>
+                <h3 className="mb-1 font-semibold text-zinc-900">No characters yet — let&apos;s fix that.</h3>
                 <p className="mb-6 text-sm text-zinc-500 max-w-xs">
-                  Upload a photo to create your first AI cartoon character. It only takes a few minutes.
+                  Upload a photo and we&apos;ll turn you into a cartoon character.
                 </p>
                 <Button asChild>
-                  <Link href="/character/new">Create Your First Character</Link>
+                  <Link href="/character/new">Add my first character</Link>
                 </Button>
               </CardContent>
             </Card>
@@ -125,7 +129,7 @@ export default async function DashboardPage() {
                     <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-violet-100 text-2xl">
                       +
                     </div>
-                    <p className="text-sm font-medium text-violet-600">New Character</p>
+                    <p className="text-sm font-medium text-violet-600">Add a character</p>
                   </CardContent>
                 </Card>
               </Link>
@@ -163,16 +167,16 @@ export default async function DashboardPage() {
                             size="sm"
                             className="flex-1"
                             disabled={!canMakeVideo}
-                            title={!canMakeVideo ? "Select a style for this character first" : undefined}
+                            title={!canMakeVideo ? "Pick a style for this character first, then hit roll." : undefined}
                           >
                             {canMakeVideo ? (
-                              <Link href={studioUrl}>Make Video</Link>
+                              <Link href={studioUrl}>Roll it</Link>
                             ) : (
-                              <span>Make Video</span>
+                              <span>Roll it</span>
                             )}
                           </Button>
                           <Button asChild size="sm" variant="ghost" className="text-zinc-500 shrink-0">
-                            <Link href={`/character/${char.id}`}>Manage</Link>
+                            <Link href={`/character/${char.id}`}>Character settings</Link>
                           </Button>
                         </div>
                       </CardContent>
@@ -194,10 +198,10 @@ export default async function DashboardPage() {
         {/* Recent Projects */}
         <section>
           <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-zinc-900">Recent Projects</h2>
+            <h2 className="text-xl font-semibold text-zinc-900">Recent videos</h2>
             {projects.length > 0 && (
               <Button asChild variant="outline" size="sm">
-                <Link href="/projects">View all</Link>
+                <Link href="/projects">See all videos</Link>
               </Button>
             )}
           </div>
@@ -206,11 +210,11 @@ export default async function DashboardPage() {
             <Card className="border-dashed">
               <CardContent className="flex flex-col items-center py-16 text-center">
                 <div className="mb-3 text-5xl">🎬</div>
-                <h3 className="mb-1 font-semibold text-zinc-900">No projects yet</h3>
+                <h3 className="mb-1 font-semibold text-zinc-900">No videos yet.</h3>
                 <p className="text-sm text-zinc-500">
                   {characters.length === 0
-                    ? "Create a character first, then start your first video project."
-                    : "Pick a character and start your first video project."}
+                    ? "Add a character first, then make your first video."
+                    : "Pick a character and make your first video."}
                 </p>
               </CardContent>
             </Card>
@@ -231,11 +235,11 @@ export default async function DashboardPage() {
                     <div className="flex gap-2">
                       {proj.status === "succeeded" && proj.finalVideoUrl ? (
                         <Button asChild size="sm" variant="outline" className="flex-1">
-                          <a href={proj.finalVideoUrl} download>Download</a>
+                          <a href={proj.finalVideoUrl} download>Download video</a>
                         </Button>
                       ) : (
                         <Button asChild size="sm" className="flex-1">
-                          <Link href={`/studio/${proj.id}`}>Continue</Link>
+                          <Link href={`/studio/${proj.id}`}>Keep going</Link>
                         </Button>
                       )}
                       <DeleteButton url={`/api/projects/${proj.id}`} />

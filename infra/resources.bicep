@@ -3,20 +3,31 @@ param postgresLocation string
 param environmentName string
 param containerImage string
 
+// Only used on first-time provisioning of the DB. Bicep sets this ONCE when
+// Postgres is created; changing later requires updating the DB directly.
 @secure()
 param dbAdminPassword string
 
-@secure()
-param nextAuthSecret string
-
-@secure()
-param replicateApiToken string
-
-@secure()
-param anthropicApiKey string
-
-@secure()
-param falKey string
+// ── Container App management gate ─────────────────────────────────────────
+// The Container App resource is only re-declared by Bicep when explicitly
+// requested. Reason: re-declaring wipes the `secrets` array (Container Apps
+// PUT semantics — the array is source-of-truth every deploy). We want
+// Portal-managed secrets to survive subsequent deploys.
+//
+// Flow:
+//   First-time provisioning (Container App doesn't exist yet):
+//     deploy.sh detects absence → passes provisionContainerApp=true →
+//     Bicep creates Container App with empty user-secret placeholders →
+//     user then sets values in Portal.
+//
+//   Subsequent deploys (Container App exists):
+//     deploy.sh passes provisionContainerApp=false → Bicep skips the app →
+//     deploy.sh runs `az containerapp update --image X` for image bumps.
+//     Portal-managed secrets untouched.
+//
+// New env vars OR new secret NAMES: bump this to true for one deploy, then
+// re-populate any user secrets in Portal that Bicep placeholder'd to empty.
+param provisionContainerApp bool = false
 
 param appUrl string
 
@@ -109,8 +120,21 @@ resource appContainer 'Microsoft.Storage/storageAccounts/blobServices/containers
   properties: { publicAccess: 'Blob' }
 }
 
-// ── Container App ──────────────────────────────────────────────────────────
-resource app 'Microsoft.App/containerApps@2023-05-01' = {
+// ── Container App (guarded — only touched on first-time bootstrap) ──────
+//
+// User-secret VALUES are managed in Portal → Container App → Secrets. Bicep
+// only sets the acr-password (which it derives from the ACR resource
+// itself) and declares placeholder empty values for named user-secrets so
+// env-var `secretRef` references resolve on first-time provisioning.
+//
+// After first-time provisioning, subsequent Bicep runs pass
+// provisionContainerApp=false, and this resource is skipped entirely.
+// Portal-managed secret values survive because Bicep never touches them.
+//
+// If you add a new secret NAME later, set provisionContainerApp=true for
+// ONE deploy to make Bicep re-declare the secrets array, then re-populate
+// the placeholder-cleared values in Portal.
+resource app 'Microsoft.App/containerApps@2023-05-01' = if (provisionContainerApp) {
   name: appName
   location: location
   properties: {
@@ -129,11 +153,19 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
         }
       ]
       secrets: [
+        // Bicep-derived (safe to overwrite — comes from ACR resource lookup):
         { name: 'acr-password', value: acr.listCredentials().passwords[0].value }
-        { name: 'nextauth-secret', value: nextAuthSecret }
-        { name: 'replicate-api-token', value: replicateApiToken }
-        { name: 'anthropic-api-key', value: anthropicApiKey }
-        { name: 'fal-key', value: falKey }
+        // User-managed placeholders. Set actual values in Portal after
+        // first-time provisioning. Empty string here means env vars come
+        // up empty and code paths that check `!process.env.X` skip cleanly
+        // (e.g. webhook verify returns 401 until you set WEBHOOK_SECRET).
+        { name: 'nextauth-secret', value: '' }
+        { name: 'replicate-api-token', value: '' }
+        { name: 'anthropic-api-key', value: '' }
+        { name: 'fal-key', value: '' }
+        { name: 'webhook-secret', value: '' }
+        { name: 'replicate-webhook-secret', value: '' }
+        { name: 'azure-comms-connection', value: '' }
       ]
     }
     template: {
@@ -163,6 +195,17 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
             { name: 'REPLICATE_API_TOKEN', secretRef: 'replicate-api-token' }
             { name: 'ANTHROPIC_API_KEY', secretRef: 'anthropic-api-key' }
             { name: 'FAL_KEY', secretRef: 'fal-key' }
+            // Webhook HMAC secret — verified in lib/webhooks/verify.ts.
+            // fal.ai and Replicate callbacks 401 without it.
+            { name: 'WEBHOOK_SECRET', secretRef: 'webhook-secret' }
+            { name: 'REPLICATE_WEBHOOK_SECRET', secretRef: 'replicate-webhook-secret' }
+            // Azure Communication Services — password reset email sender.
+            { name: 'AZURE_COMMUNICATION_CONNECTION_STRING', secretRef: 'azure-comms-connection' }
+            // Kill switch: unset means off. Set to "1" via portal for
+            // ops-controlled pause of all model-calling routes.
+            { name: 'KILL_SWITCH', value: '' }
+            // Cost cap — set via Portal to override the '' default.
+            { name: 'MAX_MONTHLY_MODEL_CALLS', value: '' }
             {
               name: 'NEXT_PUBLIC_APP_URL'
               value: empty(appUrl) ? 'https://${appName}.${caEnv.properties.defaultDomain}' : appUrl
@@ -186,7 +229,10 @@ resource app 'Microsoft.App/containerApps@2023-05-01' = {
 }
 
 output registryLoginServer string = acr.properties.loginServer
-output appUri string = 'https://${app.properties.configuration.ingress.fqdn}'
+// appUri output only makes sense when we own the Container App resource
+// on this run. deploy.sh falls back to `az containerapp show` when this
+// is empty (subsequent deploys where provisionContainerApp=false).
+output appUri string = provisionContainerApp ? 'https://${app.properties.configuration.ingress.fqdn}' : ''
 output databaseUrl string = 'postgresql://${dbUser}:***@${postgres.properties.fullyQualifiedDomainName}:5432/${dbName}?sslmode=require'
 output AZURE_STORAGE_ACCOUNT_NAME string = storageAccount.name
 output DATABASE_SERVER_FQDN string = postgres.properties.fullyQualifiedDomainName

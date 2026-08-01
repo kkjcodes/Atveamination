@@ -56,9 +56,9 @@ export default function TrainingProgress({ jobId }: { jobId: string | null }) {
     <div className="mb-8 rounded-xl bg-violet-50 border border-violet-200 px-5 py-5">
       <div className="flex items-start justify-between gap-4 mb-3">
         <div>
-          <p className="font-medium text-violet-800 text-sm">LoRA training in progress</p>
+          <p className="font-medium text-violet-800 text-sm">Character training in progress</p>
           <p className="mt-0.5 text-violet-600 text-sm">
-            This typically takes 5–15 minutes. The page will update automatically.
+            This usually takes 15 to 30 minutes. You can leave and return — we&apos;ll finish on our end.
           </p>
         </div>
         <Button

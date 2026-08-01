@@ -86,7 +86,7 @@ export default function TermsPage() {
         </section>
 
         <section className="space-y-3">
-          <h2 className="text-xl font-semibold text-zinc-800 border-b border-zinc-200 pb-2">6. No Warranty — "As Is" Service</h2>
+          <h2 className="text-xl font-semibold text-zinc-800 border-b border-zinc-200 pb-2">6. No Warranty — &ldquo;As Is&rdquo; Service</h2>
           <p className="text-sm text-zinc-600 uppercase font-medium">
             THE SERVICE IS PROVIDED &ldquo;AS IS&rdquo; AND &ldquo;AS AVAILABLE&rdquo; WITHOUT ANY WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, ACCURACY, OR UNINTERRUPTED AVAILABILITY. ATVEANIMATION MAKES NO WARRANTY THAT THE SERVICE WILL MEET YOUR REQUIREMENTS, PRODUCE ANY PARTICULAR OUTPUT, OR FUNCTION WITHOUT ERRORS OR INTERRUPTIONS.
           </p>

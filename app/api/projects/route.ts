@@ -8,7 +8,8 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
 
-  const { character_id, character_ids, voice_id, title } = await req.json()
+  const { character_id, character_ids, voice_id, title, language } = await req.json()
+  const lang = language === "hi" || language === "es" ? language : "en"
 
   // Normalize: accept either character_id (single) or character_ids (multi)
   const ids: string[] = character_ids?.length
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
       voiceId: voice_id ?? null,
       title: title ?? "Untitled Video",
       status: "pending",
+      language: lang,
       characters: {
         create: ids.map((id, i) => ({ characterId: id, orderIndex: i })),
       },

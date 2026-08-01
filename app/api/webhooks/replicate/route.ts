@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/client"
 import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
-import { fal, FAL_MODELS } from "@/lib/fal/client"
+import { fal, FAL_MODELS, languageForVoice, kokoroSpeedForBudget } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
 import { describeFirstFrame } from "@/lib/ai/describe"
 import { inferSpeakerCharacterId } from "@/lib/scene-routing"
 import { verifyReplicateSignature } from "@/lib/webhooks/verify"
+import { chunkPlanForDuration } from "@/lib/video/chunk-plan"
 
 async function toDataUri(url: string): Promise<string> {
   const res = await fetch(url)
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
     include: { project: { select: {
       characterId: true,
       voiceId: true,
+      language: true,
       characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } },
     } } },
   })
@@ -106,8 +108,8 @@ export async function POST(req: NextRequest) {
       const charDesc = character.characterDescription?.trim()
       const ttsText = imageScene.voiceScript?.trim() || imageScene.description
 
-      const rawVideoPrompt = `${hints.video}, ${charDesc ? charDesc + ", " : ""}${imageScene.description}, animated cartoon scene, illustrated cartoon background, 2D painted background, slow smooth motion, gentle movement, stable background`
-      const negativePrompt = "realistic, photorealistic, live action, real background, real world background, photograph, photography, stock photo, natural landscape, human skin texture, blurry, low quality, fast motion, sudden movement, shaky camera, motion blur, camera pan, flickering, nsfw, nudity, nude, explicit, sexual, adult content"
+      const rawVideoPrompt = `${hints.video}, ${charDesc ? charDesc + ", " : ""}${imageScene.description}, animated cartoon scene, illustrated cartoon background, 2D painted background, smooth natural motion, stable background`
+      const negativePrompt = "realistic, photorealistic, live action, real background, real world background, photograph, photography, stock photo, natural landscape, human skin texture, blurry, low quality, static image, frozen frame, still frame, shaky camera, motion blur, camera pan, flickering, nsfw, nudity, nude, explicit, sexual, adult content"
 
       const [videoPrompt, imageUrl] = await Promise.all([
         sanitizeVideoPrompt(rawVideoPrompt),
@@ -133,6 +135,12 @@ export async function POST(req: NextRequest) {
         ? `${base}/api/webhooks/fal?secret=${webhookSecret}`
         : undefined
 
+      // Chunk plan: 6s → 1 chunk; 10s → 2; 15s → 3. First chunk uses the
+      // keyframe; subsequent chunks are chained via last-frame extraction in
+      // the fal webhook.
+      const plan = chunkPlanForDuration(imageScene.durationSeconds)
+      const firstChunkFrames = plan.framesPerChunk[0]
+
       const falSubmit = await fal.queue.submit(FAL_MODELS.wan, {
         input: {
           prompt: videoPrompt,
@@ -141,18 +149,21 @@ export async function POST(req: NextRequest) {
           resolution: "720p",
           aspect_ratio: "16:9",
           guide_scale: 8,
-          num_frames: 100,
+          num_frames: firstChunkFrames,
         },
         ...(falWebhookUrl && { webhookUrl: falWebhookUrl }),
       })
 
       const kokoroVoice = (voice?.ttsParams as { kokoroVoice?: string } | null)?.kokoroVoice
+      const ttsLanguage = kokoroVoice ? languageForVoice(kokoroVoice) : (imageScene.project.language ?? "en")
       let audioPred: { id: string } | null = null
       let preGeneratedAudioUrl: string | null = null
 
       if (kokoroVoice && ttsText) {
         try {
-          const r = await fal.subscribe(FAL_MODELS.kokoro, { input: { text: ttsText, voice: kokoroVoice } })
+          const targetSec = imageScene.durationSeconds ?? 6
+          const speed = kokoroSpeedForBudget(ttsText, targetSec, ttsLanguage)
+          const r = await fal.subscribe(FAL_MODELS.kokoro, { input: { text: ttsText, voice: kokoroVoice, language: ttsLanguage, speed } })
           const d = r.data as { audio?: { url: string }; audio_url?: string; audio_file?: { url: string } }
           const rawUrl = d?.audio?.url ?? d?.audio_url ?? d?.audio_file?.url
           if (rawUrl) {
@@ -168,7 +179,7 @@ export async function POST(req: NextRequest) {
           const speakerUri = await toDataUri(voice.sampleAudioUrl)
           audioPred = await replicate.predictions.create({
             ...predRef(MODELS.xttsV2),
-            input: { text: ttsText, speaker: speakerUri, language: "en", cleanup_voice: false },
+            input: { text: ttsText, speaker: speakerUri, language: ttsLanguage, cleanup_voice: false },
             ...webhookConfig(),
           })
         } catch (e) {
@@ -183,6 +194,9 @@ export async function POST(req: NextRequest) {
           imageUrl,
           generationPhase: "video",
           videoPredictionId: falSubmit.request_id,
+          videoChunkCount: plan.framesPerChunk.length,
+          videoChunkUrls: [],
+          videoPrompt: videoPrompt,
           audioPredictionId: audioPred?.id ?? null,
           audioUrl: preGeneratedAudioUrl,
         },

@@ -11,10 +11,12 @@ export default function CharacterNameEditor({ characterId, initialName }: Props)
   const [name, setName] = useState(initialName)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function startEdit() {
     setEditing(true)
+    setError(null)
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
@@ -26,16 +28,25 @@ export default function CharacterNameEditor({ characterId, initialName }: Props)
       return
     }
     setSaving(true)
+    setError(null)
     try {
-      await fetch(`/api/characters/${characterId}`, {
+      // Verify res.ok — old code accepted the new name locally even when
+      // the PATCH failed, so users thought they'd renamed but the DB row
+      // still had the old value on next refresh.
+      const res = await fetch(`/api/characters/${characterId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: trimmed }),
-      })
+      }).catch(() => null)
+      if (!res || !res.ok) {
+        setError("Couldn't rename. Try again.")
+        setName(initialName)
+        return
+      }
       setName(trimmed)
+      setEditing(false)
     } finally {
       setSaving(false)
-      setEditing(false)
     }
   }
 
@@ -49,15 +60,18 @@ export default function CharacterNameEditor({ characterId, initialName }: Props)
 
   if (editing) {
     return (
-      <input
-        ref={inputRef}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        onBlur={save}
-        onKeyDown={onKeyDown}
-        disabled={saving}
-        className="text-3xl font-bold text-zinc-900 bg-transparent border-b-2 border-violet-400 outline-none w-full max-w-sm"
-      />
+      <div>
+        <input
+          ref={inputRef}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={save}
+          onKeyDown={onKeyDown}
+          disabled={saving}
+          className="text-3xl font-bold text-zinc-900 bg-transparent border-b-2 border-violet-400 outline-none w-full max-w-sm"
+        />
+        {error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
+      </div>
     )
   }
 

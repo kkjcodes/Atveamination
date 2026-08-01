@@ -27,7 +27,7 @@ export default function LoginPage() {
     if (result?.ok) {
       router.push("/dashboard")
     } else {
-      setError("Invalid email or password")
+      setError("We couldn't sign you in with that email and password. Try again, or reset your password.")
       setLoading(false)
     }
   }
@@ -40,7 +40,7 @@ export default function LoginPage() {
         <Card>
           <CardHeader>
             <CardTitle>Welcome back</CardTitle>
-            <CardDescription>Sign in to your account to continue</CardDescription>
+            <CardDescription>Sign in to pick up where you left off.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -75,7 +75,7 @@ export default function LoginPage() {
               )}
 
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Signing in…" : "Sign In"}
+                {loading ? "Signing in…" : "Sign in"}
               </Button>
             </form>
 

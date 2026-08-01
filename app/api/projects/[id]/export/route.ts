@@ -8,11 +8,10 @@ import ffmpegStatic from "ffmpeg-static"
 import { promises as fs } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
+import { ffprobeBinary } from "@/lib/paths"
 
 if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic)
-ffmpeg.setFfprobePath(
-  join(process.cwd(), "node_modules", "ffprobe-static", "bin", process.platform, process.arch, "ffprobe")
-)
+ffmpeg.setFfprobePath(ffprobeBinary())
 
 // Converts 16:9 landscape video to 9:16 portrait using blurred-background padding.
 // The source is scaled to fill the frame height, blurred, then the original is

@@ -31,14 +31,14 @@ export default function SignupPage() {
     })
 
     if (res.status === 409) {
-      setError("Email already in use")
+      setError("An account already exists with that email. Try signing in instead.")
       setLoading(false)
       return
     }
 
     if (!res.ok) {
-      const data = await res.json()
-      setError(data.error ?? "Something went wrong")
+      const data = await res.json().catch(() => ({}))
+      setError(data.error ?? "Something went wrong on our end. Try again in a moment.")
       setLoading(false)
       return
     }
@@ -60,12 +60,12 @@ export default function SignupPage() {
         <Card>
           <CardHeader>
             <CardTitle>Create your account</CardTitle>
-            <CardDescription>Start making cartoon videos for free</CardDescription>
+            <CardDescription>Free to start. Your video and character are yours to keep.</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="name">Full name</Label>
+                <Label htmlFor="name">Your name</Label>
                 <Input
                   id="name"
                   type="text"
@@ -94,7 +94,7 @@ export default function SignupPage() {
                 <Input
                   id="password"
                   type="password"
-                  placeholder="At least 8 characters"
+                  placeholder="At least 8 characters — pick something you'll remember"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -129,7 +129,7 @@ export default function SignupPage() {
               )}
 
               <Button type="submit" className="w-full" disabled={loading || !termsAccepted}>
-                {loading ? "Creating account…" : "Get Started Free"}
+                {loading ? "Creating account…" : "Create my account"}
               </Button>
             </form>
 

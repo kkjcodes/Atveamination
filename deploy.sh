@@ -1,51 +1,50 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ── AtVeAnimation — deploy using az CLI (no azd Bicep provider needed) ────
-# Usage: ./deploy.sh [--env <name>] [--location <region>]
+# ── AtVeAnimation deploy ───────────────────────────────────────────────────
+# Usage:
+#   ./deploy.sh                          # normal deploy (image update only)
+#   ./deploy.sh --bootstrap              # first-time / rebuild Container App
+#   ./deploy.sh --env <name>             # override env (default: atveanimation-prod)
+#   ./deploy.sh --location <region>      # override region (default: eastus)
+#
+# ── Secret handling ───────────────────────────────────────────────────────
+# Container App → Secrets (Portal) is the ONE source of truth for user
+# secrets. Bicep never touches them:
+#   • This script does NOT prompt for user secrets.
+#   • This script does NOT store secrets on your laptop.
+#   • Regular deploys use `az containerapp update --image` — the container
+#     image is the ONLY thing that changes. Portal secrets are preserved.
+#
+# The one exception is `--bootstrap` (first-time or when adding a new
+# secret NAME / env-var wiring change): Bicep re-declares the Container
+# App with EMPTY user-secret placeholders. After that, you must re-set
+# any user secrets in Portal → Container App → Secrets (they were wiped).
+#
+# What Bicep DOES manage: acr-password (derived from ACR resource lookup),
+# infra resources (ACR, Postgres, storage, log analytics, env), and the
+# secret NAMES / env-var references. Never secret values.
 
 ENV_NAME="atveanimation-prod"
 LOCATION="eastus"
 POSTGRES_LOCATION="canadacentral"
+BOOTSTRAP=0
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --env)               ENV_NAME="$2";          shift 2 ;;
+    --env)               ENV_NAME="$2";           shift 2 ;;
     --location)          LOCATION="$2";           shift 2 ;;
     --postgres-location) POSTGRES_LOCATION="$2";  shift 2 ;;
+    --bootstrap)         BOOTSTRAP=1;             shift ;;
+    -h|--help)           grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
 
-GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'
+GREEN=$'\033[0;32m'; YELLOW=$'\033[1;33m'; RED=$'\033[0;31m'; DIM=$'\033[2m'; BOLD=$'\033[1m'; NC=$'\033[0m'
 step()  { echo -e "\n${GREEN}▶ $*${NC}"; }
 warn()  { echo -e "${YELLOW}⚠  $*${NC}"; }
 fatal() { echo -e "${RED}✗ $*${NC}"; exit 1; }
-
-SECRETS_FILE="$HOME/.atveanimation-secrets"
-
-save_secrets() {
-  cat > "$SECRETS_FILE" <<EOF
-REPLICATE_API_TOKEN="$REPLICATE_API_TOKEN"
-ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY"
-FAL_KEY="$FAL_KEY"
-DB_ADMIN_PASSWORD="$DB_ADMIN_PASSWORD"
-NEXT_AUTH_SECRET="$NEXT_AUTH_SECRET"
-EOF
-  chmod 600 "$SECRETS_FILE"
-}
-
-prompt_secret() {
-  local var="$1" label="$2"
-  if [[ -n "${!var:-}" ]]; then
-    echo "  ✓ $label already set"
-  else
-    printf "  Enter %s: " "$label"
-    read -rs val; echo
-    [[ -z "$val" ]] && fatal "$label is required"
-    export "$var"="$val"
-  fi
-}
 
 # ── 1. Prerequisites ───────────────────────────────────────────────────────
 step "Checking prerequisites"
@@ -60,81 +59,72 @@ az account show &>/dev/null || az login
 SUB_ID=$(az account show --query id -o tsv)
 echo "  ✓ Subscription: $SUB_ID"
 
-# ── 3. Secrets ────────────────────────────────────────────────────────────
-step "Collecting secrets"
-
-# Load from saved secrets file if available
-if [[ -f "$SECRETS_FILE" ]]; then
-  set -o allexport
-  # shellcheck disable=SC1090
-  source "$SECRETS_FILE"
-  set +o allexport
-  echo "  ✓ Loaded saved secrets"
-fi
-
-# Auto-generate if missing
-if [[ -z "${DB_ADMIN_PASSWORD:-}" ]]; then
-  DB_ADMIN_PASSWORD="$(openssl rand -hex 20)"
-  echo "  ✓ DB_ADMIN_PASSWORD auto-generated"
-fi
-if [[ -z "${NEXT_AUTH_SECRET:-}" ]]; then
-  NEXT_AUTH_SECRET="$(openssl rand -hex 32)"
-  echo "  ✓ NEXT_AUTH_SECRET auto-generated"
-fi
-
-prompt_secret REPLICATE_API_TOKEN "Replicate API token"
-prompt_secret ANTHROPIC_API_KEY   "Anthropic API key"
-prompt_secret FAL_KEY             "fal.ai API key"
-
-save_secrets
-
-# ── 4. Resource group ──────────────────────────────────────────────────────
+# ── 3. Resource group ─────────────────────────────────────────────────────
 RG="${ENV_NAME}-rg"
-step "Creating resource group: $RG"
+step "Ensuring resource group: $RG"
 az group create --name "$RG" --location "$LOCATION" --output none
 echo "  ✓ $RG ready"
 
-# ── 5. Get ACR details (create if first run) ──────────────────────────────
-# Provision ACR first so we have a registry to push to
-step "Provisioning Azure resources (5–7 min)"
-ACR_NAME="${ENV_NAME//[-_]/}acr"
-ACR_SERVER="${ACR_NAME}.azurecr.io"
-
-# First pass: provision all infrastructure, use a tiny placeholder only for
-# the very first deploy when no real image exists yet
+# ── 4. Detect existing Container App ──────────────────────────────────────
 EXISTING_IMAGE=$(az containerapp show --name atveanimation --resource-group "$RG" \
   --query "properties.template.containers[0].image" -o tsv 2>/dev/null || echo "")
 
-if [[ -z "$EXISTING_IMAGE" || "$EXISTING_IMAGE" == *"helloworld"* ]]; then
-  BOOTSTRAP_IMAGE="mcr.microsoft.com/azuredocs/containerapps-helloworld:latest"
-else
-  BOOTSTRAP_IMAGE="$EXISTING_IMAGE"
+if [[ -z "$EXISTING_IMAGE" ]]; then
+  echo "  ${DIM}No existing Container App — forcing --bootstrap${NC}"
+  BOOTSTRAP=1
 fi
 
-az deployment sub create \
-  --name "${ENV_NAME}-deploy" \
-  --location "$LOCATION" \
-  --template-file infra/main.bicep \
-  --parameters \
-      environmentName="$ENV_NAME" \
-      location="$LOCATION" \
-      postgresLocation="$POSTGRES_LOCATION" \
-      containerImage="$BOOTSTRAP_IMAGE" \
-      dbAdminPassword="$DB_ADMIN_PASSWORD" \
-      nextAuthSecret="$NEXT_AUTH_SECRET" \
-      replicateApiToken="$REPLICATE_API_TOKEN" \
-      anthropicApiKey="$ANTHROPIC_API_KEY" \
-      falKey="$FAL_KEY" \
-  --output none
-echo "  ✓ Infrastructure provisioned"
+# ── 5. Auto-generate DB password on first-time only ──────────────────────
+# Only needed if we're provisioning Postgres for the first time. We ask
+# Bicep to skip the password param on subsequent runs (Postgres already
+# exists with a password Bicep can't retrieve).
+DB_ADMIN_PASSWORD=""
+if [[ "$BOOTSTRAP" == "1" ]]; then
+  DB_ADMIN_PASSWORD="$(openssl rand -hex 20)"
+  echo "  ${DIM}Generated DB admin password (used only on Postgres provisioning)${NC}"
+fi
 
-# ── 6. Get ACR details ─────────────────────────────────────────────────────
+# ── 6. Bicep runs ONLY on --bootstrap ─────────────────────────────────────
+# On regular deploys, we skip Bicep entirely. Rationale: every resource in
+# resources.bicep — Postgres (admin password), storage account (public
+# access setting), Container App (secrets) — has some property that gets
+# reset on re-declaration. Portal-managed state should win; Bicep is only
+# the tool that provisioned the resource the first time.
+if [[ "$BOOTSTRAP" == "1" ]]; then
+  step "Bootstrap: Bicep provisions/refreshes all infrastructure"
+  warn "Container App secrets will be reset to empty placeholders — you MUST"
+  warn "re-set them in Portal after this deploy completes."
+
+  BOOTSTRAP_IMAGE="${EXISTING_IMAGE:-mcr.microsoft.com/azuredocs/containerapps-helloworld:latest}"
+
+  az deployment sub create \
+    --name "${ENV_NAME}-bootstrap" \
+    --location "$LOCATION" \
+    --template-file infra/main.bicep \
+    --parameters \
+        environmentName="$ENV_NAME" \
+        location="$LOCATION" \
+        postgresLocation="$POSTGRES_LOCATION" \
+        containerImage="$BOOTSTRAP_IMAGE" \
+        dbAdminPassword="$DB_ADMIN_PASSWORD" \
+        provisionContainerApp=true \
+    --output none
+  echo "  ✓ Bootstrap complete"
+else
+  step "Skipping Bicep (regular deploy — no infra changes)"
+  echo "  ${DIM}Regular deploys only update the container image via 'az containerapp update'.${NC}"
+  echo "  ${DIM}Portal-managed secrets and env vars are preserved.${NC}"
+  echo "  ${DIM}To refresh infra, run: ./deploy.sh --bootstrap${NC}"
+fi
+
+# ── 7. Get ACR details + current app URL ─────────────────────────────────
 ACR_NAME=$(az acr list --resource-group "$RG" --query "[0].name" -o tsv)
 ACR_SERVER=$(az acr show --name "$ACR_NAME" --query loginServer -o tsv)
-APP_URL=$(az containerapp show --name atveanimation --resource-group "$RG" \
-  --query "properties.configuration.ingress.fqdn" -o tsv 2>/dev/null || echo "")
-APP_URL="https://${APP_URL}"
+APP_HOST=$(az containerapp show --name atveanimation --resource-group "$RG" \
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+APP_URL="https://${APP_HOST}"
 
+# ── 8. Build image ─────────────────────────────────────────────────────────
 step "Building Docker image"
 docker build \
   --platform linux/amd64 \
@@ -143,42 +133,58 @@ docker build \
   .
 echo "  ✓ Image built"
 
-# ── 7. Push to ACR ────────────────────────────────────────────────────────
+# ── 9. Push to ACR ────────────────────────────────────────────────────────
 step "Pushing image to Azure Container Registry"
 az acr login --name "$ACR_NAME"
 docker push "${ACR_SERVER}/atveanimation:latest"
 echo "  ✓ Image pushed"
 
-# ── 8. Final deploy with real image via Bicep ─────────────────────────────
-step "Deploying real image (preserves all env vars)"
-az deployment sub create \
-  --name "${ENV_NAME}-deploy" \
-  --location "$LOCATION" \
-  --template-file infra/main.bicep \
-  --parameters \
-      environmentName="$ENV_NAME" \
-      location="$LOCATION" \
-      postgresLocation="$POSTGRES_LOCATION" \
-      containerImage="${ACR_SERVER}/atveanimation:latest" \
-      dbAdminPassword="$DB_ADMIN_PASSWORD" \
-      nextAuthSecret="$NEXT_AUTH_SECRET" \
-      replicateApiToken="$REPLICATE_API_TOKEN" \
-      anthropicApiKey="$ANTHROPIC_API_KEY" \
-      falKey="$FAL_KEY" \
+# ── 10. Deploy new image via az CLI (NOT Bicep) ──────────────────────────
+# This is the key change: image updates go through `az containerapp update`
+# which only replaces the container image. Env vars, secrets, ingress, and
+# every other property is preserved. Bicep is NOT re-run here.
+#
+# --revision-suffix forces a new revision on every deploy. Without it, if
+# the image tag stays :latest and the manifest digest is the same, Container
+# Apps deduplicates — no new revision is created and the running pod keeps
+# serving the OLD image. Epoch timestamp makes each revision uniquely named.
+REVISION_SUFFIX="v$(date +%s)"
+step "Updating Container App image (revision: $REVISION_SUFFIX, secrets + env preserved)"
+az containerapp update \
+  --name atveanimation \
+  --resource-group "$RG" \
+  --image "${ACR_SERVER}/atveanimation:latest" \
+  --revision-suffix "$REVISION_SUFFIX" \
   --output none
-echo "  ✓ Container App updated with real image + env vars"
+echo "  ✓ Image updated on Container App"
 
-# ── 9. Done ───────────────────────────────────────────────────────────────
+# ── 11. Done ──────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${GREEN}  ✓ Deployed!${NC}"
 echo -e "${GREEN}    $APP_URL${NC}"
 echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-warn "Next: point atveanimation.com at this app"
-echo "  1. In your DNS registrar add:"
-echo "     CNAME  @  →  $(echo "$APP_URL" | sed 's|https://||')"
-echo ""
-echo "  2. Then run:"
-echo "     az containerapp hostname add --resource-group $RG --name atveanimation --hostname atveanimation.com"
-echo "     az containerapp hostname bind --resource-group $RG --name atveanimation --hostname atveanimation.com --validation-method CNAME"
+
+if [[ "$BOOTSTRAP" == "1" ]]; then
+  warn "Post-bootstrap action required:"
+  echo ""
+  echo "  Portal → Container Apps → atveanimation → Settings → Secrets"
+  echo "  Set VALUES for these secrets (Bicep just declared their names):"
+  echo ""
+  echo "    nextauth-secret            (openssl rand -hex 32)"
+  echo "    replicate-api-token        (replicate.com dashboard)"
+  echo "    anthropic-api-key          (console.anthropic.com)"
+  echo "    fal-key                    (fal.ai dashboard)"
+  echo "    webhook-secret             (openssl rand -hex 32 — also paste into fal.ai webhook config)"
+  echo "    replicate-webhook-secret   (openssl rand -hex 32 — also paste into Replicate → Account → Webhook signing)"
+  echo "    azure-comms-connection     (Azure Communication Services → Keys → primary connection string)"
+  echo ""
+  echo "  Then restart the Container App:"
+  echo "    az containerapp revision restart --resource-group $RG --name atveanimation"
+  echo ""
+fi
+
+echo "  Custom domain (optional):"
+echo "    az containerapp hostname add --resource-group $RG --name atveanimation --hostname atveanimation.com"
+echo "    az containerapp hostname bind --resource-group $RG --name atveanimation --hostname atveanimation.com --validation-method CNAME"

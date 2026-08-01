@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { uploadBlob } from "@/lib/storage/client"
+import { validateAudioFile, UploadValidationError } from "@/lib/business/upload"
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
@@ -30,6 +31,14 @@ export async function POST(req: NextRequest) {
 
   let sampleAudioUrl: string | null = null
   if (audio) {
+    try {
+      validateAudioFile(audio)
+    } catch (e) {
+      if (e instanceof UploadValidationError) {
+        return NextResponse.json({ error: e.message }, { status: e.status })
+      }
+      throw e
+    }
     const blobPath = `${userId}/voices/${Date.now()}.webm`
     const buffer = Buffer.from(await audio.arrayBuffer())
     sampleAudioUrl = await uploadBlob(blobPath, buffer, "audio/webm")

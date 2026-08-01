@@ -4,6 +4,7 @@ import Link from "next/link"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import Nav from "@/components/nav"
+import SegmentFork from "@/components/segment-fork"
 import { useState, useRef } from "react"
 
 const styles = [
@@ -13,19 +14,19 @@ const styles = [
 ]
 
 const steps = [
-  { step: "01", emoji: "📸", title: "Upload Your Photo", description: "One clear selfie — our AI builds a personalised cartoon character in minutes. Do it for everyone in your crew." },
-  { step: "02", emoji: "🎨", title: "Pick a Style",       description: "Choose from 8 cartoon styles: Pixar 3D, Anime, Ghibli, Chibi, Comic, Sketch, Watercolor, Claymation." },
-  { step: "03", emoji: "🎙️", title: "Skip the voice setup", description: "We auto-match a voice to your character — no recording, no setup. Or record 30 seconds of your own voice if you'd rather." },
-  { step: "04", emoji: "🎬", title: "Generate & Share",   description: "Pick a preset scene or let AI write the script. Hit generate, get an animated MP4 — share instantly." },
+  { step: "01", emoji: "📸", title: "Add a photo",             description: "Upload one clear photo. Do the same for everyone you want in the video." },
+  { step: "02", emoji: "🎨", title: "Pick a look",             description: "Pixar, Ghibli, Anime, Watercolor, and four more. Try one first, come back for the others." },
+  { step: "03", emoji: "🎙️", title: "Voice? Sorted.",          description: "We pick a voice that fits your character. If you'd rather use your own, record thirty seconds and we'll use it instead." },
+  { step: "04", emoji: "🎬", title: "Write the scene. Or let us.", description: "Type what you want to happen, or tap a starter scene. Come back after your next coffee — your video will be waiting, and it's yours to keep." },
 ]
 
 const useCases = [
-  { emoji: "👨‍👩‍👧‍👦", title: "Family Adventures", desc: "Put the whole family in a cartoon together. Kids go wild when they see mum and dad as Pixar characters." },
-  { emoji: "💑",         title: "Couple Moments",   desc: "Surprise your partner with an animated version of your favourite memory. Way better than a meme." },
-  { emoji: "🎂",         title: "Birthday Wishes",  desc: "Send a cartoon birthday message starring you — or the whole friend group. Way more memorable than a text." },
-  { emoji: "📱",         title: "Viral Social Content", desc: "Animated Reels and TikToks that stop the scroll. Your face, your crew, your story." },
-  { emoji: "📚",         title: "Kids' Story Time", desc: "Become a cartoon character in bedtime stories your kids will beg to watch again and again." },
-  { emoji: "🎉",         title: "Group Celebrations", desc: "Holidays, graduations, weddings — animate the whole group and share the video in the group chat." },
+  { emoji: "👥",         title: "The people around you",    desc: "Animate the people you love and put them in a scene together. Watch the moment their face appears on screen." },
+  { emoji: "💑",         title: "Couple moments",           desc: "Animate a favorite memory of the two of you and surprise them on a Tuesday." },
+  { emoji: "🎂",         title: "Birthday wishes",          desc: "A birthday message that's actually them, animated, in about the time it takes to write a card." },
+  { emoji: "📱",         title: "Reels that stop the scroll", desc: "Reels and TikToks where the star is you. And your dog." },
+  { emoji: "📚",         title: "Bedtime stories",           desc: "Read a bedtime story as your cartoon self. They'll ask for it every night." },
+  { emoji: "🎉",         title: "Group celebrations",       desc: "Weddings, graduations, holidays. Animate the whole group and drop it in the group chat." },
 ]
 
 function VideoCard({ src, label, poster }: { src: string; label: string; poster: string }) {
@@ -71,26 +72,32 @@ export default function LandingPage() {
     <div className="min-h-screen flex flex-col bg-white">
       <Nav />
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
+      {/* ── Landing fork: two doors ──────────────────────────────────────── */}
+      <SegmentFork />
+
+      {/* Anchor for the family door's smooth-scroll target */}
+      <div id="family-landing" />
+
+      {/* ── Hero (family marketing continues below) ───────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-violet-950 via-violet-800 to-purple-700 px-6 pb-24 pt-20 text-center text-white">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-violet-500/20 via-transparent to-transparent" />
         <div className="relative mx-auto max-w-3xl">
 
           <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/40 bg-emerald-500/20 px-5 py-2 text-sm font-semibold text-emerald-300">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            100% Free · No Waitlist · Start in Seconds
+            Free. First video ready by your next coffee.
           </div>
 
           <h1 className="mb-4 text-5xl font-black tracking-tight sm:text-7xl leading-tight">
-            Cartoon Videos{" "}
+            Cartoon videos starring you.{" "}
             <span className="bg-gradient-to-r from-yellow-300 to-orange-300 bg-clip-text text-transparent">
-              Starring You
+              And everyone
             </span>
-            <br />& Your Whole Crew
+            <br />you love.
           </h1>
 
           <p className="mx-auto mb-4 max-w-xl text-lg text-violet-200">
-            Upload a photo, pick a cartoon style, write a scene — get a fully animated video in minutes.
+            Upload a photo. Pick a style. Write a scene. Come back to a video that&apos;s yours to keep and share anywhere.
             Add family, friends, or your partner for videos everyone will want to share.
           </p>
 
@@ -191,7 +198,7 @@ export default function LandingPage() {
             <p className="text-zinc-500 max-w-xl mx-auto">
               Add up to 4 characters per video — family members, your partner, friends.
               Each character speaks in their own voice. The AI writes scenes that feature everyone
-              and figures out who's talking. No extra setup, no approval gates.
+              and figures out who&apos;s talking. No extra setup, no approval gates.
             </p>
           </div>
 
@@ -308,7 +315,7 @@ export default function LandingPage() {
         <div className="mx-auto max-w-5xl">
           <div className="mb-14 text-center">
             <h2 className="mb-2 text-3xl font-bold text-zinc-900">How it works</h2>
-            <p className="text-zinc-500">Photo to finished video in under 10 minutes</p>
+            <p className="text-zinc-500">First-time character setup takes ~20-30 min. Future videos take a few minutes per scene.</p>
           </div>
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {steps.map((s) => (
@@ -406,7 +413,7 @@ export default function LandingPage() {
             Free to start. Always.
           </div>
           <h2 className="mb-4 text-4xl font-black leading-tight">
-            Your cartoon video is<br />10 minutes away.
+            Your cartoon video<br />starts with one photo.
           </h2>
           <p className="mb-2 text-violet-200 text-lg">
             Just your face, a story to tell, and whoever you want in it.

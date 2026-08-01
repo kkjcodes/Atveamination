@@ -42,8 +42,11 @@ memory/
 # azure local
 .azure/
 
-# local asset source folder (assets copied to public/landing/ for serving)
+# local asset source folders — source-of-truth assets get processed into
+# /public/... (small, shipped) via a curate script; raw sources stay local.
 /images/
+# Raw music source MP3s (60MB+). Curated 45s trims land in public/business/music/.
+/music/
 
 # debug
 npm-debug.log*
@@ -70,3 +73,16 @@ Episodes.md
 
 # Personal / launch material — not for the public repo
 nextsteps.md
+advertising.md
+GOOGLE-SEARCH-SETUP.md
+/Scrapbook Plan/
+
+# Local operator scratch
+azurescreenshot.png
+AUDIT-BUGS.md
+
+# Promo video / screenshot outputs — regenerated, not source
+scripts/promo/videos/
+scripts/promo/playwright-report/
+scripts/promo/e2e/videos/
+scripts/promo/screenshots/

@@ -3,17 +3,17 @@ import ffmpegStatic from "ffmpeg-static"
 import { promises as fs } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
+import { ffprobeBinary } from "@/lib/paths"
 
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic)
 }
 
 // ffprobe-static uses __dirname to locate its binary, but Turbopack rewrites
-// __dirname to /ROOT in the standalone bundle. Use process.cwd() instead,
-// which resolves to /app at runtime in the container.
-ffmpeg.setFfprobePath(
-  join(process.cwd(), "node_modules", "ffprobe-static", "bin", process.platform, process.arch, "ffprobe")
-)
+// __dirname to /ROOT in the standalone bundle. Resolved via lib/paths.ts
+// (import.meta.url based) so Turbopack traces the exact path, not the whole
+// working directory.
+ffmpeg.setFfprobePath(ffprobeBinary())
 
 async function downloadFile(url: string, destPath: string): Promise<void> {
   const res = await fetch(url)
@@ -80,37 +80,34 @@ async function mergeVideoAudio(
     resolvedAudio = silencePath
   }
 
-  // Output duration: match the shorter side, with a small buffer.
-  //   - Audio shorter than video → trim video to (audioDur + 0.5s buffer).
-  //     Otherwise Kokoro lines like "Yes!" produce 2-4s of dead silence at
-  //     the tail of a 6s WAN clip, which the user reads as "missing audio"
-  //     (most noticeable on the final scene where nothing follows).
-  //   - Audio longer than video → trim audio to video length with fade-out.
-  //   - Otherwise use video duration as-is.
-  let outputDur = videoDur
+  // Output duration policy: always play the FULL video. Two cases:
+  //   - Audio shorter than video → pad audio with trailing silence via apad,
+  //     so the character stays on-screen and animated for the full clip.
+  //     (Previously we trimmed video to audio length. That caused short lines
+  //     like "Yes!" to chop a 6s WAN clip down to 2s, and the first 2s of a
+  //     slow-motion clip looks like a still frame — users read it as "just an
+  //     image". Padding audio keeps the motion visible.)
+  //   - Audio longer than video → trim audio to video length with a fade-out.
+  //     Rare after Haiku word budget + Kokoro speed control — this is backstop.
   let audioFilterStr: string | null = null
   if (audioPath) {
     const audioDur = await probeDuration(resolvedAudio)
     if (videoDur > 0 && audioDur > videoDur * 1.05) {
       audioFilterStr = audioTrimFilter(videoDur)
-    } else if (audioDur > 0 && audioDur + 0.5 < videoDur) {
-      // Cap at audio length + small visual outro, never below the audio itself
-      outputDur = Math.min(videoDur, audioDur + 0.5)
+    } else if (audioDur > 0 && audioDur < videoDur) {
+      // apad extends audio with silence to any target length; combined with
+      // -t at the end this fills exactly to videoDur.
+      audioFilterStr = "apad"
     }
   }
-
-  // When we trim mid-frame the input must be re-encoded; stream-copy can only
-  // cut on keyframes. Re-encoding 6s clips is cheap compared to the user-visible
-  // silence we'd otherwise leave in.
-  const trimmedToAudio = outputDur < videoDur
-  const videoCodec = trimmedToAudio ? ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"] : ["-c:v", "copy"]
+  const outputDur = videoDur
 
   try {
     await new Promise<void>((resolve, reject) => {
       const opts = [
         "-map", "0:v:0",
         "-map", "1:a:0",
-        ...videoCodec,
+        "-c:v", "copy",
         "-c:a", "aac", "-b:a", "128k", "-ac", "2",
         "-t", outputDur.toFixed(3),
         "-movflags", "+faststart",
@@ -132,6 +129,104 @@ async function mergeVideoAudio(
 
 function buildConcatList(localPaths: string[]): string {
   return localPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n")
+}
+
+// Concatenates N video-only chunks (WAN i2v output) into one MP4 clipped to
+// `targetSeconds`. Used to stitch chained WAN clips within a single scene
+// BEFORE audio is merged. Stream-copy is used when chunks share the same
+// codec profile (WAN output is stable), so this is fast.
+export async function concatVideoChunks(
+  videoUrls: string[],
+  targetSeconds: number,
+  outputPath: string,
+): Promise<void> {
+  if (videoUrls.length === 0) throw new Error("No video chunks to concatenate")
+  if (videoUrls.length === 1) {
+    // Single chunk: just download and trim to target.
+    const tmp = tmpdir()
+    const sessionId = `atve_chunk1_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    const localPath = join(tmp, `${sessionId}.mp4`)
+    try {
+      await downloadFile(videoUrls[0], localPath)
+      const dur = await probeDuration(localPath)
+      if (dur <= targetSeconds + 0.05) {
+        await fs.copyFile(localPath, outputPath)
+        return
+      }
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(localPath)
+          .outputOptions([
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-t", targetSeconds.toFixed(3),
+            "-movflags", "+faststart",
+          ])
+          .output(outputPath)
+          .on("error", reject)
+          .on("end", () => resolve())
+          .run()
+      })
+    } finally {
+      await fs.unlink(localPath).catch(() => {})
+    }
+    return
+  }
+
+  const tmp = tmpdir()
+  const sessionId = `atve_chunks_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  const localPaths: string[] = []
+  const concatListPath = join(tmp, `${sessionId}_list.txt`)
+  const rawConcatPath = join(tmp, `${sessionId}_raw.mp4`)
+
+  try {
+    await Promise.all(
+      videoUrls.map(async (url, i) => {
+        const p = join(tmp, `${sessionId}_c${i}.mp4`)
+        await downloadFile(url, p)
+        localPaths[i] = p
+      }),
+    )
+
+    await fs.writeFile(concatListPath, buildConcatList(localPaths))
+
+    // Step 1: concat all chunks stream-copied (WAN output is homogeneous).
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatListPath)
+        .inputOptions(["-f", "concat", "-safe", "0"])
+        .outputOptions(["-c", "copy", "-movflags", "+faststart"])
+        .output(rawConcatPath)
+        .on("error", reject)
+        .on("end", () => resolve())
+        .run()
+    })
+
+    // Step 2: trim to target duration (re-encode; stream-copy can't cut mid-frame).
+    const combinedDur = await probeDuration(rawConcatPath)
+    if (combinedDur <= targetSeconds + 0.05) {
+      await fs.copyFile(rawConcatPath, outputPath)
+    } else {
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(rawConcatPath)
+          .outputOptions([
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-t", targetSeconds.toFixed(3),
+            "-movflags", "+faststart",
+          ])
+          .output(outputPath)
+          .on("error", reject)
+          .on("end", () => resolve())
+          .run()
+      })
+    }
+  } finally {
+    await Promise.all([
+      ...localPaths.map((p) => fs.unlink(p).catch(() => {})),
+      fs.unlink(concatListPath).catch(() => {}),
+      fs.unlink(rawConcatPath).catch(() => {}),
+    ])
+  }
 }
 
 export type Clip = { videoUrl: string; audioUrl: string | null }

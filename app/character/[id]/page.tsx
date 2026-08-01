@@ -8,9 +8,11 @@ import RetrainButton from "@/components/retrain-button"
 import TrainingProgress from "@/components/training-progress"
 import DeleteButton from "@/components/delete-button"
 import AugmentAndTrainButton from "@/components/augment-and-train-button"
+import ContinueTrainingButton from "@/components/continue-training-button"
 import CharacterDescriptionEditor from "@/components/character-description-editor"
 import CharacterNameEditor from "@/components/character-name-editor"
 import MakeVideoButton from "@/components/make-video-button"
+import ExpandableImage from "@/components/expandable-image"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
@@ -74,6 +76,17 @@ export default async function CharacterPage({
     ? (character.trainingImages as unknown[]).length
     : 0
 
+  // C1 (review): user closed the wizard between augmentation succeeding and
+  // training kickoff. augmentStatus="succeeded" + no training status ==
+  // resumable state. Offer "Continue training" that hits /train directly
+  // instead of re-running augmentation (which would waste ~$1.40 of paid
+  // Kontext calls).
+  const canResumeTraining =
+    character.augmentStatus === "succeeded" &&
+    !status &&
+    augmentedCount >= 10 &&
+    !!character.selectedStyleUrl
+
   return (
     <div className="min-h-screen bg-zinc-50">
       <Nav breadcrumbs={[{ label: character.name }]} />
@@ -113,6 +126,23 @@ export default async function CharacterPage({
             />
           </div>
         </div>
+
+        {/* Resumable state — augmentation done but training never kicked off. */}
+        {canResumeTraining && (
+          <Card className="mb-8">
+            <CardContent className="py-5 flex items-center justify-between gap-4">
+              <div>
+                <p className="font-medium text-zinc-900">Your training images are ready</p>
+                <p className="text-sm text-zinc-500 mt-0.5">
+                  {augmentedCount} images prepared. Continue to train your character — takes 15 to 30 minutes.
+                </p>
+              </div>
+              <div className="shrink-0">
+                <ContinueTrainingButton characterId={id} />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Training progress */}
         {status === "processing" && (
@@ -196,12 +226,12 @@ export default async function CharacterPage({
               {character.selectedStyleUrl && (
                 <div>
                   <p className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-2">Selected Style</p>
-                  <div className="rounded-xl overflow-hidden border border-zinc-100 h-48 bg-zinc-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                  <div className="relative rounded-xl overflow-hidden border border-zinc-100 h-48 bg-zinc-50">
+                    <ExpandableImage
                       src={character.selectedStyleUrl}
                       alt={`${character.name} selected style`}
-                      className="w-full h-full object-contain"
+                      filename={`${character.name.replace(/[^a-z0-9-_]/gi, "_")}_cartoon.jpg`}
+                      fit="contain"
                     />
                   </div>
                 </div>
@@ -221,12 +251,11 @@ export default async function CharacterPage({
                             isSelected ? "border-violet-500" : "border-zinc-200"
                           }`}
                         >
-                          <div className="aspect-square bg-zinc-100">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
+                          <div className="relative aspect-square bg-zinc-100">
+                            <ExpandableImage
                               src={opt.styleUrl}
                               alt={opt.styleName}
-                              className="w-full h-full object-cover"
+                              filename={`${character.name.replace(/[^a-z0-9-_]/gi, "_")}_${opt.styleName.replace(/[^a-z0-9-_]/gi, "_")}.jpg`}
                             />
                           </div>
                           <div className="py-2 px-3 flex items-center justify-between">
@@ -250,12 +279,12 @@ export default async function CharacterPage({
         {/* Style gallery — shown when not yet trained (so user can see options while waiting) */}
         {!trainingDone && character.selectedStyleUrl && (
           <Card className="mb-8 overflow-hidden">
-            <div className="h-72 w-full bg-zinc-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+            <div className="relative h-72 w-full bg-zinc-100">
+              <ExpandableImage
                 src={character.selectedStyleUrl}
                 alt={`${character.name} selected style`}
-                className="w-full h-full object-contain"
+                filename={`${character.name.replace(/[^a-z0-9-_]/gi, "_")}_cartoon.jpg`}
+                fit="contain"
               />
             </div>
             <CardContent className="py-4">
@@ -277,12 +306,11 @@ export default async function CharacterPage({
                       isSelected ? "border-violet-500" : "border-zinc-200"
                     }`}
                   >
-                    <div className="aspect-square bg-zinc-100">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                    <div className="relative aspect-square bg-zinc-100">
+                      <ExpandableImage
                         src={opt.styleUrl}
                         alt={opt.styleName}
-                        className="w-full h-full object-cover"
+                        filename={`${character.name.replace(/[^a-z0-9-_]/gi, "_")}_${opt.styleName.replace(/[^a-z0-9-_]/gi, "_")}.jpg`}
                       />
                     </div>
                     <div className="py-2 px-3 flex items-center justify-between">

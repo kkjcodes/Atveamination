@@ -16,21 +16,20 @@ param postgresLocation string = location
 @description('Container image to deploy, e.g. "myacr.azurecr.io/atveanimation:latest"')
 param containerImage string
 
-// ── Runtime secrets (passed via azd env or CI secrets) ───────────────────
+// Only used on first-time Postgres provisioning. Passed via deploy.sh.
 @secure()
 param dbAdminPassword string
 
-@secure()
-param nextAuthSecret string
-
-@secure()
-param replicateApiToken string
-
-@secure()
-param anthropicApiKey string
-
-@secure()
-param falKey string
+// ── Container App management gate ─────────────────────────────────────────
+// User-managed secret VALUES live in Container App → Secrets (Portal).
+// Bicep re-declaring the Container App wipes them. So this flag controls
+// whether Bicep touches the Container App at all.
+//
+// Set true only on: first-ever create, OR when adding a new secret name /
+// changing env-var wiring / other Container App structural changes. Every
+// other deploy uses `az containerapp update --image X` (bypasses Bicep
+// for the Container App resource).
+param provisionContainerApp bool = false
 
 param appUrl string = ''
 
@@ -49,10 +48,7 @@ module resources 'resources.bicep' = {
     environmentName: environmentName
     containerImage: containerImage
     dbAdminPassword: dbAdminPassword
-    nextAuthSecret: nextAuthSecret
-    replicateApiToken: replicateApiToken
-    anthropicApiKey: anthropicApiKey
-    falKey: falKey
+    provisionContainerApp: provisionContainerApp
     appUrl: appUrl
   }
 }
