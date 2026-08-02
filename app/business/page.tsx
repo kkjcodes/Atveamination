@@ -1,22 +1,41 @@
+import type { Metadata } from "next"
 import { getServerSession } from "next-auth"
-import { redirect } from "next/navigation"
 import Link from "next/link"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import Nav from "@/components/nav"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import BusinessMarketing from "./marketing"
 
-// /business — the business door's home. Handles the resumability rule
-// explicitly: if the user has a draft business (incomplete onboarding), we
-// route them straight back to /business/new?resume=<id>. If they have ready
-// businesses, list them. If neither, invite them to create one.
+// Same URL serves marketing (anon) and workspace (auth), so metadata targets
+// the marketing pitch (that's the one Google crawls anyway — Googlebot is
+// always unauthenticated).
+// title.absolute bypasses the root layout's title.template ("· AtVeAnimation")
+// so we get a single clean title instead of a duplicated brand.
+export const metadata: Metadata = {
+  title: { absolute: "AI ad generator for small businesses — AtVeAnimation" },
+  description: "Turn photos of your work into a ready-to-post video ad. Script, voice-over, music, and sizing done for you. No filming or editing.",
+  alternates: { canonical: "/business" },
+  openGraph: {
+    title: "AI ad generator for small businesses",
+    description: "Photos in, ready-to-post video ad out. No filming or editing.",
+    url: "/business",
+    images: ["/og-image.png"],
+  },
+}
+
+// /business is auth-aware. Anonymous visitors see the public marketing page
+// (single URL for external ads: atveanimation.com/business). Authenticated
+// users see their workspace with draft/ready list. This lets us market the
+// short URL without forcing a signup wall before the pitch.
 //
-// Anonymous visitors get bounced to signup with a redirect back to /business
-// so their landing intent survives the auth loop.
+// Workspace resumability: draft businesses take priority — user is routed
+// to /business/new?resume=<id> to finish onboarding before doing anything
+// else.
 export default async function BusinessHomePage() {
   const session = await getServerSession(authOptions)
-  if (!session) redirect("/auth/signup?redirect=/business&segment=business")
+  if (!session) return <BusinessMarketing />
 
   const userId = session.user.id
 

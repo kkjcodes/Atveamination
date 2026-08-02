@@ -20,7 +20,12 @@ export const config = {
     "/voice/:path*",
     "/studio/:path*",
     "/scrapbook/:path*",
-    "/business/:path*",
+    // `:path+` (not `:path*`) so middleware protects /business/[id] and
+    // /business/new but leaves the bare /business route free to run its own
+    // page-level auth check — that page is auth-aware, showing the public
+    // marketing pitch to anonymous visitors and the workspace to signed-in
+    // users. Marketing URL kept short (/business, not /for-business).
+    "/business/:path+",
     "/admin/:path*",
   ],
 }

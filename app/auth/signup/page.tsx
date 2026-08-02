@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
 import Nav from "@/components/nav"
@@ -9,9 +9,31 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { safeRedirect } from "@/lib/safe-redirect"
 
+// Next.js 15 requires useSearchParams() to be wrapped in a Suspense boundary.
 export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupPageInner />
+    </Suspense>
+  )
+}
+
+function SignupPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const nextUrl = safeRedirect(searchParams.get("redirect"))
+  // Preserve segment intent across the register call so the User row gets
+  // the correct segment stamp. Validation happens server-side.
+  const segment = searchParams.get("segment") ?? undefined
+  // If the visitor already has an account and clicks "Sign in", carry the
+  // same redirect + segment so they don't get bounced to /dashboard.
+  const authIntentParams = new URLSearchParams()
+  const rawRedirect = searchParams.get("redirect")
+  if (rawRedirect) authIntentParams.set("redirect", rawRedirect)
+  if (segment) authIntentParams.set("segment", segment)
+  const signInHref = authIntentParams.toString() ? `/auth/login?${authIntentParams.toString()}` : "/auth/login"
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -27,7 +49,7 @@ export default function SignupPage() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, name }),
+      body: JSON.stringify({ email, password, name, segment }),
     })
 
     if (res.status === 409) {
@@ -45,7 +67,7 @@ export default function SignupPage() {
 
     const result = await signIn("credentials", { email, password, redirect: false })
     if (result?.ok) {
-      router.push("/dashboard")
+      router.push(nextUrl)
     } else {
       setError("Account created but sign-in failed. Please sign in manually.")
       setLoading(false)
@@ -135,7 +157,7 @@ export default function SignupPage() {
 
             <p className="mt-6 text-center text-sm text-zinc-500">
               Already have an account?{" "}
-              <Link href="/auth/login" className="font-medium text-violet-600 hover:underline">
+              <Link href={signInHref} className="font-medium text-violet-600 hover:underline">
                 Sign in
               </Link>
             </p>

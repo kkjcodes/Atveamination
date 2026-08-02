@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { Suspense, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
 import Nav from "@/components/nav"
@@ -9,9 +9,31 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { safeRedirect } from "@/lib/safe-redirect"
 
+// Next.js 15 requires useSearchParams() to be wrapped in a Suspense boundary
+// so pages using it can still be statically rendered where possible.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageInner />
+    </Suspense>
+  )
+}
+
+function LoginPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const nextUrl = safeRedirect(searchParams.get("redirect"))
+  // Preserve intent when the user clicks "Sign up free" — otherwise a
+  // business visitor who lands on login by mistake gets sent to /dashboard
+  // after account creation instead of /business/new.
+  const authIntentParams = new URLSearchParams()
+  const rawRedirect = searchParams.get("redirect")
+  const segment = searchParams.get("segment")
+  if (rawRedirect) authIntentParams.set("redirect", rawRedirect)
+  if (segment) authIntentParams.set("segment", segment)
+  const signUpHref = authIntentParams.toString() ? `/auth/signup?${authIntentParams.toString()}` : "/auth/signup"
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
@@ -25,7 +47,7 @@ export default function LoginPage() {
     const result = await signIn("credentials", { email, password, redirect: false })
 
     if (result?.ok) {
-      router.push("/dashboard")
+      router.push(nextUrl)
     } else {
       setError("We couldn't sign you in with that email and password. Try again, or reset your password.")
       setLoading(false)
@@ -87,7 +109,7 @@ export default function LoginPage() {
 
             <p className="mt-3 text-center text-sm text-zinc-500">
               Don&apos;t have an account?{" "}
-              <Link href="/auth/signup" className="font-medium text-violet-600 hover:underline">
+              <Link href={signUpHref} className="font-medium text-violet-600 hover:underline">
                 Sign up free
               </Link>
             </p>
