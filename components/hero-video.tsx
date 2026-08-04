@@ -11,11 +11,16 @@ export function HeroVideo({
   poster,
   label,
   aspectClass = "aspect-video",
+  fit = "cover",
 }: {
   src: string
   poster: string
   label: string
   aspectClass?: string
+  // "contain" letterboxes the video inside the container — required for
+  // vertical (9:16) videos in a 16:9 slot, where object-cover crops away
+  // most of the frame including captions.
+  fit?: "cover" | "contain"
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [playing, setPlaying] = useState(false)
@@ -35,7 +40,7 @@ export function HeroVideo({
         playsInline
         controls={playing}
         onEnded={() => setPlaying(false)}
-        className="h-full w-full object-cover"
+        className={`h-full w-full ${fit === "contain" ? "object-contain" : "object-cover"}`}
       />
       {!playing && (
         <button

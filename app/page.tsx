@@ -85,6 +85,7 @@ export default function LandingPage() {
               src="/marketing/business-hero.mp4"
               poster="/marketing/business-hero-poster.jpg"
               label="Play business example"
+              fit="contain"
             />
             <div className="flex flex-1 flex-col p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-orange-500 mb-2">
