@@ -195,6 +195,20 @@ export default async function DashboardPage() {
           )}
         </section>
 
+        {/* Scrapbook entry point — the nav link is hidden on mobile, so the
+            dashboard needs its own path to /scrapbook */}
+        <section className="mb-14">
+          <div className="flex items-center justify-between bg-gradient-to-r from-rose-50 to-amber-50 border border-rose-200 rounded-xl px-5 py-4">
+            <div>
+              <p className="font-semibold text-rose-900 text-sm">Scrapbook videos</p>
+              <p className="text-xs text-rose-700 mt-0.5">Turn photos into a cartoon scrapbook that flips through moments.</p>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0 ml-4">
+              <Link href="/scrapbook">Open scrapbook</Link>
+            </Button>
+          </div>
+        </section>
+
         {/* Recent Projects */}
         <section>
           <div className="mb-5 flex items-center justify-between">

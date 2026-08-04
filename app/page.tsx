@@ -43,11 +43,13 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2">
           {/* Personal card */}
           <div className="group flex flex-col overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm transition-shadow hover:shadow-lg">
-            <HeroVideo
-              src="/marketing/personal-hero.mp4"
-              poster="/marketing/personal-hero-poster.jpg"
-              label="Play personal example"
-            />
+            {/* Placeholder — hero video pulled 2026-08-02, will restore later tonight */}
+            <div className="aspect-video bg-gradient-to-br from-violet-100 via-violet-50 to-purple-50 flex items-center justify-center">
+              <div className="text-center px-6">
+                <div className="text-4xl mb-3">🎬</div>
+                <p className="text-sm font-medium text-violet-700">Example video coming back soon</p>
+              </div>
+            </div>
             <div className="flex flex-1 flex-col p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-violet-500 mb-2">
                 For yourself and family
