@@ -26,7 +26,31 @@ type Stats = {
   activity: { activeUsers7d: number; activeUsers30d: number }
   usersByRole: Record<string, number>
   recentUsers: { id: string; email: string; name: string | null; role: string; createdAt: string }[]
-  charts: { dailyUsers: DayPoint[]; dailyScenes: DayPoint[]; dailyProjects: DayPoint[] }
+  business: {
+    businesses: number
+    ads: number
+    adsReady: number
+    renders: number
+    medianIterations: number
+    galleryOptInRate: number
+  }
+  scrapbook: {
+    total: number
+    completed: number
+    failed: number
+    inProgress: number
+    successRate: number
+    pagesRendered: number
+    totalCostUsd: number
+  }
+  combined: { videosDelivered: number }
+  charts: {
+    dailyUsers: DayPoint[]
+    dailyScenes: DayPoint[]
+    dailyProjects: DayPoint[]
+    dailyAds: DayPoint[]
+    dailyScrapbooks: DayPoint[]
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -77,7 +101,7 @@ export default function AdminDashboard() {
   if (error) return <div className="p-10 text-red-600">{error}</div>
   if (!stats) return <div className="p-10 text-zinc-400">Loading…</div>
 
-  const { totals, today, activity, usersByRole, recentUsers, charts } = stats
+  const { totals, today, activity, usersByRole, recentUsers, business, scrapbook, combined, charts } = stats
 
   const userGrowth = today.newUsersYesterday > 0
     ? (((today.newUsers - today.newUsersYesterday) / today.newUsersYesterday) * 100).toFixed(0)
@@ -94,6 +118,9 @@ export default function AdminDashboard() {
           <p className="text-sm text-zinc-400">AtVeAnimation — internal metrics</p>
         </div>
         <div className="flex gap-2">
+          <Link href="/admin/metrics" className="rounded-lg border border-violet-200 px-4 py-2 text-sm font-medium text-violet-600 hover:bg-violet-50 transition">
+            Business Detail
+          </Link>
           <Link href="/admin/email" className="rounded-lg border border-violet-200 px-4 py-2 text-sm font-medium text-violet-600 hover:bg-violet-50 transition">
             Contact Users
           </Link>
@@ -105,30 +132,56 @@ export default function AdminDashboard() {
 
       <div className="mx-auto max-w-7xl space-y-10 px-8 py-10">
 
-        {/* ── Top KPIs ── */}
-        <Section title="Overview">
+        {/* ── Top KPIs — all products combined ── */}
+        <Section title="Overview — all products">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Total Users" value={totals.users.toLocaleString()} color="violet" />
             <StatCard label="New Users Today" value={today.newUsers}
               sub={userGrowth !== null ? `${Number(userGrowth) >= 0 ? "+" : ""}${userGrowth}% vs yesterday` : "no data yet"}
               color={Number(userGrowth) >= 0 ? "emerald" : "rose"} />
             <StatCard label="Active Today" value={today.activeUsers} sub="users who generated something" color="blue" />
-            <StatCard label="Active (30d)" value={activity.activeUsers30d} color="blue" />
+            <StatCard label="Videos Delivered" value={combined.videosDelivered.toLocaleString()}
+              sub="personal + business + scrapbook" color="emerald" />
           </div>
         </Section>
 
-        {/* ── Content KPIs ── */}
-        <Section title="Content">
+        {/* ── Personal product KPIs ── */}
+        <Section title="Personal videos">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Scenes Generated" value={totals.completedScenes.toLocaleString()} color="violet" />
             <StatCard label="Scene Success Rate" value={`${totals.successRate}%`} sub={`${totals.scenes} total attempted`} color={totals.successRate >= 80 ? "emerald" : "amber"} />
             <StatCard label="Projects Created" value={totals.projects.toLocaleString()} color="violet" />
             <StatCard label="Videos Stitched" value={totals.stitchedVideos.toLocaleString()} sub="full MP4 downloads" color="emerald" />
           </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Characters Trained" value={totals.characters.toLocaleString()} sub="LoRA fine-tunes run" color="amber" />
             <StatCard label="Voice Clones" value={totals.voices.toLocaleString()} color="amber" />
             <StatCard label="Active (7d)" value={activity.activeUsers7d} color="blue" />
+            <StatCard label="Active (30d)" value={activity.activeUsers30d} color="blue" />
+          </div>
+        </Section>
+
+        {/* ── Business fork KPIs ── */}
+        <Section title="Business ads">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Businesses" value={business.businesses.toLocaleString()} color="amber" />
+            <StatCard label="Ads Created" value={business.ads.toLocaleString()} sub={`${business.adsReady} ready`} color="amber" />
+            <StatCard label="Renders Completed" value={business.renders.toLocaleString()} color="emerald" />
+            <StatCard label="Median Iterations / Ad" value={business.medianIterations.toFixed(1)}
+              sub={`gallery opt-in ${(business.galleryOptInRate * 100).toFixed(0)}%`} color="blue" />
+          </div>
+        </Section>
+
+        {/* ── Scrapbook fork KPIs ── */}
+        <Section title="Scrapbooks">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard label="Scrapbooks Created" value={scrapbook.total.toLocaleString()} color="rose" />
+            <StatCard label="Completed" value={scrapbook.completed.toLocaleString()}
+              sub={`${scrapbook.successRate}% success · ${scrapbook.failed} failed`}
+              color={scrapbook.successRate >= 80 || scrapbook.completed === 0 ? "emerald" : "amber"} />
+            <StatCard label="In Progress" value={scrapbook.inProgress} sub="currently generating" color="blue" />
+            <StatCard label="Provider Spend" value={`$${scrapbook.totalCostUsd.toFixed(2)}`}
+              sub={`${scrapbook.pagesRendered.toLocaleString()} pages rendered`} color="rose" />
           </div>
         </Section>
 
@@ -199,6 +252,36 @@ export default function AdminDashboard() {
             </ResponsiveContainer>
           </div>
         </Section>
+
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Section title="Daily Ads Created — last 30 days">
+            <div className="rounded-xl border border-zinc-100 bg-white p-6 shadow-sm">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={charts.dailyAds.map((d) => ({ ...d, day: shortDay(d.day) }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#f59e0b" radius={[3, 3, 0, 0]} name="Ads" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+
+          <Section title="Daily Scrapbooks Created — last 30 days">
+            <div className="rounded-xl border border-zinc-100 bg-white p-6 shadow-sm">
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={charts.dailyScrapbooks.map((d) => ({ ...d, day: shortDay(d.day) }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f4f4f5" />
+                  <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#f43f5e" radius={[3, 3, 0, 0]} name="Scrapbooks" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Section>
+        </div>
 
         {/* ── Recent users ── */}
         <Section title="Recent Sign-ups">
