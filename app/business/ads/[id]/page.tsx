@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useCallback, useState } from "react"
+import { use, useCallback, useEffect, useState } from "react"
 import Nav from "@/components/nav"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import type { AdScript } from "@/lib/business/adscript-schema"
 import { useAsyncWork } from "@/hooks/use-async-work"
 import { AsyncWorkStatus } from "@/components/async-work-status"
+import { GenerationLoader } from "@/components/generation-loader"
 import { ASYNC_WORK_COPY } from "@/lib/copy"
 import type { AsyncErrorCode } from "@/lib/async-work/errors"
 
@@ -71,6 +72,14 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
     timeoutMs: 8 * 60 * 1000,  // renders are 60-120s, 8min gives generous slack
     onAuthExpired,
   })
+
+  // A stuck-but-alive render (e.g. slow TTS provider) shouldn't dead-end at
+  // the poll timeout — keep checking every 30s while the page stays open.
+  useEffect(() => {
+    if (pollStatus !== "timeout" || ad?.status !== "rendering") return
+    const t = setTimeout(() => refetch(), 30000)
+    return () => clearTimeout(t)
+  }, [pollStatus, ad?.status, refetch])
 
   async function submitEdit() {
     if (!editText.trim()) return
@@ -214,7 +223,17 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
           {isPollTerminal && (
             <AsyncWorkStatus
               status={pollStatus}
-              error={pollError}
+              error={
+                pollStatus === "timeout" && ad.status === "rendering"
+                  ? {
+                      code: "provider_timeout",
+                      message: "The video service is busier than usual, so this render is slow. We'll keep checking automatically while you're here.",
+                      savedState: "Your ad script is saved.",
+                      nextAction: "You can also try again now, or come back later.",
+                      retryable: true,
+                    }
+                  : pollError
+              }
               copy={ASYNC_WORK_COPY.businessRender}
               onRetry={() => {
                 refetch()
@@ -293,9 +312,13 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
                   </div>
                 </>
               ) : (
-                <div className="aspect-video rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-400 text-sm">
-                  {ad.status === "rendering" ? "Making your video… (1-2 minutes)" : "No video yet. Tap Make a video below."}
-                </div>
+                ad.status === "rendering" ? (
+                  <GenerationLoader className="aspect-video" message="Making your video… usually 1–2 minutes" />
+                ) : (
+                  <div className="aspect-video rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-400 text-sm">
+                    No video yet. Tap Make a video below.
+                  </div>
+                )
               )}
             </CardContent>
           </Card>

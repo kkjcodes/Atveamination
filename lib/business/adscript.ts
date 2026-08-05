@@ -29,7 +29,9 @@ export {
   makeAdScriptInput,
   coerceAspectRatio,
   coerceTemplateFamily,
+  enforcePhotoOrder,
 } from "@/lib/business/adscript-input"
+import { enforcePhotoOrder } from "@/lib/business/adscript-input"
 export type {
   MusicOption,
   AdScriptInput,
@@ -88,6 +90,7 @@ Rules (STRICT — validation will reject violations):
 - Field names on hook/benefit/cta scenes: type, text, vo_text, asset_id, min_seconds, motion (and optional pronunciation_hint). Use "text" — NOT "overlay_text", "heading", "title", or any other name.
 - Field names on end_card: type, lines, min_seconds (and optional logo_asset_id, vo_text). Use "lines" as a JSON array of strings — NOT "text_lines" or a single string.
 - Every non-end_card scene needs a valid asset_id from the list above.
+- Photos are listed in the user's chosen order. Scenes MUST use them in that same order — a scene's photo must never appear earlier in the list than a previous scene's photo. You may skip photos; never reorder them.
 - Word caps for the "text" field: hook ≤ 8 words, benefit ≤ 12 words, cta ≤ 8 words.
 - End-card lines: ≤ 40 chars each, at least one line.
 - vo_text: required on every non-end_card scene, ≤ 30 words. Natural spoken sentence, not a copy of the overlay text.
@@ -152,8 +155,11 @@ export async function generateAdScript(input: AdScriptInput): Promise<AdScriptRe
   } catch (e) {
     return { ok: false, errors: [{ path: "$", message: `initial call failed: ${(e as Error)?.message}` }], lastAttempt: null }
   }
+  const orderedAssetIds = input.photos.map((p) => p.assetId)
   let errors = validateAdScript(attempt, ctx)
-  if (errors.length === 0) return { ok: true, script: attempt as AdScript, repairUsed: false }
+  if (errors.length === 0) {
+    return { ok: true, script: enforcePhotoOrder(attempt as AdScript, orderedAssetIds), repairUsed: false }
+  }
 
   // Attempt 2 (repair)
   try {
@@ -162,7 +168,9 @@ export async function generateAdScript(input: AdScriptInput): Promise<AdScriptRe
     return { ok: false, errors: [{ path: "$", message: `repair call failed: ${(e as Error)?.message}` }], lastAttempt: attempt }
   }
   errors = validateAdScript(attempt, ctx)
-  if (errors.length === 0) return { ok: true, script: attempt as AdScript, repairUsed: true }
+  if (errors.length === 0) {
+    return { ok: true, script: enforcePhotoOrder(attempt as AdScript, orderedAssetIds), repairUsed: true }
+  }
 
   return { ok: false, errors, lastAttempt: attempt }
 }

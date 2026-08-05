@@ -17,6 +17,7 @@ import { Progress } from "@/components/ui/progress"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { GenerationLoader } from "@/components/generation-loader"
 import type { Character, JobStatus, Scene } from "@/types"
 
 const MAX_SCENES = 100
@@ -1313,6 +1314,10 @@ function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, on
               </div>
             )}
           </div>
+        )}
+
+        {isProcessing && (
+          <GenerationLoader className="mb-3 h-40 w-full" message="Making this scene… usually 1–2 minutes" />
         )}
 
         <div className="space-y-3">

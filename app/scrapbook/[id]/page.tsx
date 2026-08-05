@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import ExpandableImage from "@/components/expandable-image"
 import { STYLE_PRESETS, type ScrapbookStyle, COST_ESTIMATES } from "@/lib/scrapbook/config"
 import { AsyncWorkStatus } from "@/components/async-work-status"
+import { GenerationLoader } from "@/components/generation-loader"
 import { ASYNC_WORK_COPY, PRODUCT_TERMS } from "@/lib/copy"
 import { useAsyncWork } from "@/hooks/use-async-work"
 import type { AsyncErrorCode } from "@/lib/async-work/errors"
@@ -293,6 +294,17 @@ export default function ScrapbookDetailPage({ params }: { params: Promise<{ id: 
             copy={ASYNC_WORK_COPY.scrapbookStitch}
             onRetry={stitch}
           />
+        )}
+
+        {project.status === "generating" && !project.finalVideoUrl && (
+          <Card>
+            <CardContent className="p-4">
+              <GenerationLoader
+                className="aspect-video"
+                message="Putting your scrapbook together… usually a few minutes"
+              />
+            </CardContent>
+          </Card>
         )}
 
         {project.finalVideoUrl && (

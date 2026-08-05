@@ -6,11 +6,14 @@ import { uploadAssetFromFile, UploadValidationError } from "@/lib/business/uploa
 import { emit } from "@/lib/events"
 
 const MIN_PHOTOS = 1
-const MAX_PHOTOS = 5
+// 20 is a library cap, not a per-ad cap — businesses reuse a few evergreen
+// shots (storefront, logo wall) and add a couple new ones per ad. Per-ad
+// selection is capped separately in the ads route.
+const MAX_PHOTOS = 20
 
-// POST /api/business/[id]/photos — add product photos (1-5 total per business).
+// POST /api/business/[id]/photos — add product photos (1-20 total per business).
 // Multipart with `photos` files. Server counts existing photos first so we
-// enforce the 5-cap even across multiple upload batches.
+// enforce the cap even across multiple upload batches.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id: businessId } = await params
   const session = await getServerSession(authOptions)
@@ -61,9 +64,58 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     throw e
   }
+  // Append at the end of the user's arranged order.
+  const maxExisting = await prisma.asset.aggregate({
+    where: {
+      userId,
+      kind: "product_photo",
+      blobPath: { startsWith: `business/${businessId}/photos/` },
+      id: { notIn: uploaded.map((a) => a.id) },
+    },
+    _max: { orderIndex: true },
+  })
+  const base = (maxExisting._max.orderIndex ?? -1) + 1
+  await Promise.all(
+    uploaded.map((a, i) => prisma.asset.update({ where: { id: a.id }, data: { orderIndex: base + i } })),
+  )
   void emit("photos_uploaded", { businessId, count: uploaded.length }, userId)
 
   return NextResponse.json({ photos: uploaded }, { status: 201 })
+}
+
+// PATCH /api/business/[id]/photos — persist a user-arranged photo order.
+// Body: { orderedAssetIds: string[] }. Each listed asset gets its array
+// position as orderIndex; photos not listed keep their old index.
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id: businessId } = await params
+  const session = await getServerSession(authOptions)
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  const userId = session.user.id
+
+  const body = await req.json().catch(() => ({})) as { orderedAssetIds?: unknown }
+  const ids = Array.isArray(body.orderedAssetIds)
+    ? body.orderedAssetIds.filter((x): x is string => typeof x === "string")
+    : []
+  if (ids.length === 0) return NextResponse.json({ error: "orderedAssetIds required" }, { status: 400 })
+
+  const owned = await prisma.asset.findMany({
+    where: {
+      id: { in: ids },
+      userId,
+      kind: "product_photo",
+      blobPath: { startsWith: `business/${businessId}/photos/` },
+    },
+    select: { id: true },
+  })
+  const ownedIds = new Set(owned.map((a) => a.id))
+  if (ids.some((id) => !ownedIds.has(id))) {
+    return NextResponse.json({ error: "Unknown photo in order list" }, { status: 400 })
+  }
+
+  await prisma.$transaction(
+    ids.map((id, i) => prisma.asset.update({ where: { id }, data: { orderIndex: i } })),
+  )
+  return NextResponse.json({ ok: true })
 }
 
 // DELETE /api/business/[id]/photos?assetId=xxx — remove a product photo.

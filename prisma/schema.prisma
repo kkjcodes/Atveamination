@@ -70,6 +70,10 @@ model Asset {
   // Arbitrary per-kind metadata: {width, height} for images, {durationSec,
   // fps} for video, {sha256} for tts-cache lookups, etc.
   meta         Json?
+  // User-arranged position within its group (product photos per business).
+  // All-zero (the default) falls back to createdAt order, so pre-existing
+  // rows need no backfill.
+  orderIndex   Int       @default(0) @map("order_index")
   createdAt    DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

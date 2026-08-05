@@ -86,10 +86,22 @@ export async function mixAudio(
     voLabels.push(`[vo${idx}]`)
   }
 
-  // Concat all VO labels into one bus for ducking sidechain.
+  // Concat all VO labels into one bus. When the music will be ducked, split
+  // the bus in two: one copy feeds the sidechain detector, the other goes to
+  // the final mix. A filtergraph label can only be consumed once — reusing
+  // [vobus] for both made ffmpeg fail with "Invalid stream specifier", which
+  // killed every render that had both VO and music.
+  const willDuck = !!musicPath && musicGain(musicLevel) > -50
   let voBus: string | null = null
+  let voSidechain: string | null = null
   if (voLabels.length > 0) {
-    filterParts.push(`${voLabels.join("")}amix=inputs=${voLabels.length}:duration=first:normalize=0[vobus]`)
+    const mix = `${voLabels.join("")}amix=inputs=${voLabels.length}:duration=first:normalize=0`
+    if (willDuck) {
+      filterParts.push(`${mix},asplit=2[vobus][voduck]`)
+      voSidechain = "[voduck]"
+    } else {
+      filterParts.push(`${mix}[vobus]`)
+    }
     voBus = "[vobus]"
   }
 
@@ -108,10 +120,10 @@ export async function mixAudio(
     filterParts.push(
       `[${mIdx}:a]volume=${gain}dB,atrim=0:${totalDurationSec.toFixed(3)},afade=type=out:start_time=${fadeStart}:duration=1.5[musictrim]`,
     )
-    if (voBus && gain > -50) {
+    if (voSidechain) {
       // Duck music under VO.
       filterParts.push(
-        `[musictrim]${voBus}sidechaincompress=threshold=0.05:ratio=8:attack=5:release=250[mducked]`,
+        `[musictrim]${voSidechain}sidechaincompress=threshold=0.05:ratio=8:attack=5:release=250[mducked]`,
       )
       musicOut = "[mducked]"
     } else {

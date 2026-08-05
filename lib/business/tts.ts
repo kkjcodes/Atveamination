@@ -34,6 +34,17 @@ export const VOICE_LABELS: Record<Voice, { name: string; vibe: string }> = {
 }
 
 const ENGINE = "kokoro"
+const TTS_TIMEOUT_MS = 150_000
+
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(`${label} (waited ${Math.round(ms / 1000)}s)`)), ms)
+    p.then(
+      (v) => { clearTimeout(t); resolve(v) },
+      (e) => { clearTimeout(t); reject(e) },
+    )
+  })
+}
 
 function contentHash(engine: string, voiceId: string, text: string): string {
   return createHash("sha256")
@@ -86,7 +97,14 @@ export async function synthesize(voice: Voice, text: string, pronunciationHint?:
     return { audioUrl: existing.audioUrl, durationSec: existing.durationSec, cached: true }
   }
 
-  const { audioUrl: rawUrl } = await synthesizeKokoro(voiceId, ttsInput)
+  // Bound the fal call. A congested Kokoro queue has left renders stuck at
+  // phase-1 TTS indefinitely — better to fail the render with a retryable
+  // error than sit in status="rendering" until the stale reclaim window.
+  const { audioUrl: rawUrl } = await withTimeout(
+    synthesizeKokoro(voiceId, ttsInput),
+    TTS_TIMEOUT_MS,
+    "The voice service is taking too long right now",
+  )
 
   const blobPath = `business/tts-cache/${hash}.wav`
   const audioUrl = await mirrorUrlToBlob(rawUrl, blobPath)

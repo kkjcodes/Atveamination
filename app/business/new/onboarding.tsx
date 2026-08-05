@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea"
 // Result: closing the tab at ANY point is safe. Revisiting /business/new
 // resumes exactly where we left off.
 
-const MAX_PHOTOS = 5
+const MAX_PHOTOS = 20
 
 type InitialBusiness = {
   id: string
@@ -151,6 +151,23 @@ export default function BusinessOnboarding({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed")
     }
+  }
+
+  async function movePhoto(assetId: string, dir: -1 | 1) {
+    const i = photos.findIndex((p) => p.id === assetId)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= photos.length) return
+    const next = [...photos]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    setPhotos(next)
+    // Persist — best-effort; the grid already shows the new order.
+    const id = businessIdRef.current
+    if (!id) return
+    void fetch(`/api/business/${id}/photos`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderedAssetIds: next.map((p) => p.id) }),
+    }).catch(() => {})
   }
 
   async function removePhoto(assetId: string) {
@@ -329,22 +346,56 @@ export default function BusinessOnboarding({
             </span>
           </label>
           {photos.length > 0 && (
-            <div className="mt-3 grid grid-cols-4 sm:grid-cols-5 gap-2">
-              {photos.map((p) => (
-                <div key={p.id} className="relative w-full aspect-square rounded-lg overflow-hidden group">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={p.url} alt="" className="w-full h-full object-cover" />
-                  <button
-                    type="button"
-                    onClick={() => removePhoto(p.id)}
-                    className="absolute top-0 right-0 bg-black/60 text-white text-xs w-5 h-5 flex items-center justify-center hover:bg-black/80"
-                    aria-label="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
+            <>
+              {photos.length > 1 && (
+                <p className="mt-2 text-xs text-zinc-400">
+                  This is the order your ad will use — the arrows rearrange it.
+                </p>
+              )}
+              <div className="mt-2 grid grid-cols-4 sm:grid-cols-5 gap-2">
+                {photos.map((p, i) => (
+                  <div key={p.id} className="w-full">
+                    <div className="relative w-full aspect-square rounded-lg overflow-hidden group">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt="" className="w-full h-full object-cover" />
+                      <span className="absolute top-1 left-1 flex h-5 w-5 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white">
+                        {i + 1}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removePhoto(p.id)}
+                        className="absolute top-0 right-0 bg-black/60 text-white text-xs w-5 h-5 flex items-center justify-center hover:bg-black/80"
+                        aria-label="Remove"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    {photos.length > 1 && (
+                      <div className="mt-1 flex justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => movePhoto(p.id, -1)}
+                          disabled={i === 0}
+                          aria-label={`Move photo ${i + 1} earlier`}
+                          className="rounded border border-zinc-200 px-1.5 text-xs text-zinc-500 hover:border-amber-400 hover:text-amber-600 disabled:opacity-30"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => movePhoto(p.id, 1)}
+                          disabled={i === photos.length - 1}
+                          aria-label={`Move photo ${i + 1} later`}
+                          className="rounded border border-zinc-200 px-1.5 text-xs text-zinc-500 hover:border-amber-400 hover:text-amber-600 disabled:opacity-30"
+                        >
+                          →
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
 

@@ -131,9 +131,11 @@ export function useAsyncWork<T>(params: UseAsyncWorkParams<T>): UseAsyncWorkResu
         setStatus("timeout")
         setError({
           code: "provider_timeout",
-          message: "This is taking longer than expected.",
+          // The status card's title already says "taking longer than
+          // expected" — don't repeat it, explain it.
+          message: "It's still running, just slower than usual.",
           savedState: "Your work is saved.",
-          nextAction: "Refresh the page in a few minutes to check on it, or try again.",
+          nextAction: "Keep this page open to check again, or try again now.",
           retryable: true,
         })
         return

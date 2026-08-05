@@ -48,6 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     templateFamily?: unknown
     aspectRatio?: unknown
     voice?: unknown  // optional; if provided we override AdScript's picked voice
+    assetIds?: unknown  // optional ordered photo selection; order = scene order
   }
   const templateFamily = coerceTemplateFamily(body.templateFamily)
   const aspectRatio = coerceAspectRatio(body.aspectRatio)
@@ -55,14 +56,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!templateFamily) return NextResponse.json({ error: "templateFamily is required" }, { status: 400 })
   if (!aspectRatio) return NextResponse.json({ error: "aspectRatio is required" }, { status: 400 })
 
-  const photos = await prisma.asset.findMany({
-    where: {
-      userId,
-      kind: "product_photo",
-      blobPath: { startsWith: `business/${businessId}/photos/` },
-    },
-    orderBy: { createdAt: "asc" },
-  })
+  const photoWhere = {
+    userId,
+    kind: "product_photo" as const,
+    blobPath: { startsWith: `business/${businessId}/photos/` },
+  }
+  // Ordered selection from the picker. Dedupe keeping first occurrence; the
+  // array order is the user's chosen photo order and flows through the
+  // AdScript prompt + enforcePhotoOrder.
+  const selectedIds = Array.isArray(body.assetIds)
+    ? [...new Set(body.assetIds.filter((x): x is string => typeof x === "string"))]
+    : null
+  let photos
+  if (selectedIds && selectedIds.length > 0) {
+    if (selectedIds.length > 8) {
+      return NextResponse.json({ error: "Pick up to 8 photos per ad" }, { status: 400 })
+    }
+    const found = await prisma.asset.findMany({ where: { ...photoWhere, id: { in: selectedIds } } })
+    const byId = new Map(found.map((a) => [a.id, a]))
+    if (selectedIds.some((id) => !byId.has(id))) {
+      return NextResponse.json({ error: "Some selected photos no longer exist. Refresh and try again." }, { status: 400 })
+    }
+    photos = selectedIds.map((id) => byId.get(id)!)
+  } else {
+    photos = await prisma.asset.findMany({
+      where: photoWhere,
+      orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
+    })
+  }
   if (photos.length === 0) {
     return NextResponse.json({ error: "Add at least one product photo first" }, { status: 400 })
   }

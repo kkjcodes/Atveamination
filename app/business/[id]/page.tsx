@@ -26,13 +26,27 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   })
   if (!business) notFound()
 
-  const photoCount = await prisma.asset.count({
+  const photoAssets = await prisma.asset.findMany({
     where: {
       userId: session.user.id,
       kind: "product_photo",
       blobPath: { startsWith: `business/${id}/photos/` },
     },
+    orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
+    select: { id: true, url: true },
   })
+
+  // Usage counts from each ad's current script — shown as badges in the
+  // photo picker so evergreen shots (storefront, end credit) are easy to spot.
+  // Listing order stays the user's arranged library order.
+  const uses = new Map<string, number>()
+  for (const ad of business.ads) {
+    const script = ad.adScript as { scenes?: Array<{ asset_id?: string }> } | null
+    for (const sc of script?.scenes ?? []) {
+      if (sc.asset_id) uses.set(sc.asset_id, (uses.get(sc.asset_id) ?? 0) + 1)
+    }
+  }
+  const photos = photoAssets.map((p) => ({ ...p, uses: uses.get(p.id) ?? 0 }))
 
   const ads = business.ads
 
@@ -44,7 +58,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
         <h1 className="text-3xl font-bold text-zinc-900 mb-1">{business.name || "Untitled business"}</h1>
         <p className="text-zinc-500 mb-8">{business.oneLiner}</p>
 
-        {photoCount === 0 ? (
+        {photos.length === 0 ? (
           <Card className="border-amber-200 bg-amber-50/50 mb-6">
             <CardContent className="p-5">
               <p className="text-sm text-amber-900 mb-3">
@@ -56,7 +70,7 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             </CardContent>
           </Card>
         ) : (
-          <BusinessAdGenerator businessId={business.id} photoCount={photoCount} />
+          <BusinessAdGenerator businessId={business.id} photos={photos} />
         )}
 
         {ads.length > 0 && (

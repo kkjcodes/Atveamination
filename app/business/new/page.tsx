@@ -61,7 +61,7 @@ export default async function NewBusinessPage({
           kind: "product_photo",
           blobPath: { startsWith: `business/${b.id}/photos/` },
         },
-        orderBy: { createdAt: "asc" },
+        orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
       })
       initialPhotos = photos.map((p) => ({ id: p.id, url: p.url }))
     }

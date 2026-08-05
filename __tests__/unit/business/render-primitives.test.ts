@@ -21,11 +21,35 @@ describe("dimensionsFor", () => {
 })
 
 describe("buildMotionFilter", () => {
-  it("hold produces a scale+crop chain (no motion)", () => {
+  it("hold produces a blur-fill chain with a static zoompan", () => {
     const f = buildMotionFilter("hold", 3, 1080, 1920)
     expect(f).toContain("scale=1080:1920")
-    expect(f).toContain("crop=1080:1920")
-    expect(f).not.toContain("zoompan")
+    expect(f).toContain("boxblur")
+    expect(f).toContain("zoompan=z=1:")
+  })
+
+  it("every motion normalizes exactly once (single-frame trim before zoompan)", () => {
+    // -loop 1 streams the still at 30fps; without the trim the 2x blur-fill
+    // composite re-runs per frame and renders take minutes on 1 vCPU.
+    for (const motion of ["slow_zoom_in", "slow_zoom_out", "pan_left", "pan_right", "hold"] as const) {
+      const f = buildMotionFilter(motion, 3, 1080, 1920)
+      expect(f.startsWith("trim=end_frame=1,"), motion).toBe(true)
+      expect(f, motion).toContain("zoompan")
+    }
+  })
+
+  it("every motion normalizes source aspect without distortion", () => {
+    // The zoompan crop window keeps the source aspect ratio, so a bare
+    // scale=iw*2:ih*2 prefix stretched landscape photos on 9:16 outputs.
+    // Every chain must contain the blur-fill: cover crop for the background,
+    // contained (undistorted) photo overlaid on top.
+    for (const motion of ["slow_zoom_in", "slow_zoom_out", "pan_left", "pan_right", "hold"] as const) {
+      const f = buildMotionFilter(motion, 3, 1080, 1920)
+      expect(f, motion).toContain("force_original_aspect_ratio=increase")
+      expect(f, motion).toContain("force_original_aspect_ratio=decrease")
+      expect(f, motion).toContain("overlay=(W-w)/2:(H-h)/2")
+      expect(f, motion).not.toContain("scale=iw*2:ih*2")
+    }
   })
 
   it("slow_zoom_in produces a zoompan clamped to 1.08", () => {
