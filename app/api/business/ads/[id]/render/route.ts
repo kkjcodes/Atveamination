@@ -6,6 +6,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { publicPath } from "@/lib/paths"
 import { renderAd, downloadAssetsToLocal } from "@/lib/business/render"
+import { isPresenterEligibleStyle } from "@/lib/business/presenter"
 import type { AdScript } from "@/lib/business/adscript-schema"
 import { emit } from "@/lib/events"
 import { checkBusinessRenderLimit, killSwitchEngaged } from "@/lib/limits"
@@ -42,7 +43,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const ad = await prisma.ad.findFirst({
     where: { id: adId, business: { userId } },
     include: {
-      business: { select: { id: true, userId: true, logoAssetId: true } },
+      business: { select: { id: true, userId: true, logoAssetId: true, phone: true, website: true } },
     },
   })
   if (!ad) return NextResponse.json({ error: "Ad not found" }, { status: 404 })
@@ -100,6 +101,29 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Render already in progress" }, { status: 409 })
   }
 
+  // Cartoon presenter: resolve the character's style image + eligibility
+  // BEFORE the fire-and-forget so a bad setup fails the request, not the job.
+  let presenterOptions: NonNullable<Parameters<typeof renderAd>[3]>["presenter"] = null
+  if (ad.presenterCharacterId && ad.voiceoverEnabled) {
+    const character = await prisma.character.findFirst({
+      where: { id: ad.presenterCharacterId, userId },
+      select: { selectedStyleUrl: true, selectedStyle: true },
+    })
+    if (character?.selectedStyleUrl && isPresenterEligibleStyle(character.selectedStyle)) {
+      presenterOptions = {
+        characterId: ad.presenterCharacterId,
+        styleImageUrl: character.selectedStyleUrl,
+        slot: ad.presenterSlot === "cta" ? "cta" : "hook",
+        replicateToken: process.env.REPLICATE_API_TOKEN ?? "",
+        cached: {
+          clipUrl: ad.presenterClipUrl,
+          keyframeUrl: ad.presenterKeyframeUrl,
+          lineHash: ad.presenterClipLineHash,
+        },
+      }
+    }
+  }
+
   void emit("render_started", { adId, templateFamily: ad.templateFamily, aspectRatio: ad.aspectRatio }, userId)
 
   fireAndForget({
@@ -111,7 +135,14 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       try {
         const imagePaths = await downloadAssetsToLocal(urlsByAssetId, workDir)
         const captionFontPath = publicPath("scrapbook/handwriting.ttf")
-        const result = await renderAd(script, { imagePaths, captionFontPath }, adId)
+        const result = await renderAd(script, { imagePaths, captionFontPath }, adId, {
+          voiceoverEnabled: ad.voiceoverEnabled,
+          captionsEnabled: ad.captionsEnabled,
+          qrEnabled: ad.qrEnabled,
+          contactStrip: ad.contactStrip,
+          contact: { phone: ad.business.phone, website: ad.business.website },
+          presenter: presenterOptions,
+        })
 
         const renderAsset = await prisma.asset.create({
           data: {
@@ -137,8 +168,20 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
             renderStartedAt: null,
             renderFailureCode: null,
             renderFailureMessage: null,
+            // Cache the presenter artifacts so re-renders skip regeneration
+            // unless the spoken line changed.
+            ...(result.presenter?.used
+              ? {
+                  presenterClipUrl: result.presenter.clipUrl,
+                  presenterKeyframeUrl: result.presenter.keyframeUrl,
+                  presenterClipLineHash: result.presenter.lineHash,
+                }
+              : {}),
           },
         })
+        if (result.presenter?.fallbackReason) {
+          console.log(`[render] ${adId} presenter fell back: ${result.presenter.fallbackReason}`)
+        }
 
         void emit("render_completed", {
           adId,

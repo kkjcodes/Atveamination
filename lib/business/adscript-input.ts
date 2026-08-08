@@ -22,6 +22,10 @@ export type AdScriptInput = {
   aspectRatio: AspectRatio
   logoAssetId: string | null
   availableMusic: MusicOption[]
+  // Optional creative controls (Phase A+B options)
+  occasionBrief?: string | null
+  phone?: string | null
+  website?: string | null
 }
 
 export type AdScriptInputBusiness = {
@@ -38,6 +42,7 @@ export function makeAdScriptInput(
   templateFamily: TemplateFamily,
   aspectRatio: AspectRatio,
   availableMusic: MusicOption[],
+  extras: { occasionBrief?: string | null; phone?: string | null; website?: string | null } = {},
 ): AdScriptInput {
   return {
     photos,
@@ -49,6 +54,9 @@ export function makeAdScriptInput(
     aspectRatio,
     logoAssetId: business.logoAssetId,
     availableMusic,
+    occasionBrief: extras.occasionBrief ?? null,
+    phone: extras.phone ?? null,
+    website: extras.website ?? null,
   }
 }
 

@@ -27,6 +27,8 @@ export default async function NewBusinessPage({
     oneLiner: string
     address: string | null
     notes: string | null
+    phone: string | null
+    website: string | null
     logoAssetId: string | null
   } | null = null
   let initialPhotos: Array<{ id: string; url: string }> = []
@@ -52,6 +54,8 @@ export default async function NewBusinessPage({
         oneLiner: b.oneLiner,
         address: b.address,
         notes: b.notes,
+        phone: b.phone,
+        website: b.website,
         logoAssetId: b.logoAssetId,
       }
       initialLogoUrl = b.logo?.url ?? null

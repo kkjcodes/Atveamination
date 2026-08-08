@@ -10,6 +10,8 @@ import {
 } from "@/lib/business/adscript"
 import { VOICES, type Voice } from "@/lib/business/adscript-schema"
 import { musicForFamily } from "@/lib/business/music-catalog"
+import { occasionById } from "@/lib/business/occasions"
+import { isPresenterEligibleStyle } from "@/lib/business/presenter"
 import { emit } from "@/lib/events"
 import { killSwitchEngaged } from "@/lib/limits"
 
@@ -49,6 +51,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     aspectRatio?: unknown
     voice?: unknown  // optional; if provided we override AdScript's picked voice
     assetIds?: unknown  // optional ordered photo selection; order = scene order
+    voiceover?: unknown  // false → music-only ad (render skips TTS)
+    occasion?: unknown  // occasion chip id (lib/business/occasions.ts)
+    musicId?: unknown   // optional; overrides AdScript's picked music track
+    captions?: unknown  // false → no burned-in narration subtitles
+    qr?: unknown        // false → no end-card QR code
+    contactStrip?: unknown // true → phone chip on every scene
+    presenterCharacterId?: unknown // cartoon presenter (requires voiceover)
+    presenterSlot?: unknown        // "hook" | "cta"
   }
   const templateFamily = coerceTemplateFamily(body.templateFamily)
   const aspectRatio = coerceAspectRatio(body.aspectRatio)
@@ -88,6 +98,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Add at least one product photo first" }, { status: 400 })
   }
 
+  const occasion = occasionById(typeof body.occasion === "string" ? body.occasion : null)
+
+  // Cartoon presenter: only with narration, only on non-scrapbook templates,
+  // only for characters whose style passed the lip-sync bench.
+  let presenterCharacterId: string | null = null
+  if (
+    typeof body.presenterCharacterId === "string" &&
+    body.voiceover !== false &&
+    templateFamily !== "scrapbook"
+  ) {
+    const ch = await prisma.character.findFirst({
+      where: { id: body.presenterCharacterId, userId },
+      select: { selectedStyleUrl: true, selectedStyle: true },
+    })
+    if (!ch?.selectedStyleUrl) {
+      return NextResponse.json({ error: "That character doesn't have a style yet — pick one first." }, { status: 400 })
+    }
+    if (!isPresenterEligibleStyle(ch.selectedStyle)) {
+      return NextResponse.json({ error: "That character's art style can't present yet — try a Pixar, Ghibli, comic, or claymation character." }, { status: 400 })
+    }
+    presenterCharacterId = body.presenterCharacterId
+  }
+  const availableMusicAll = await musicForFamily(templateFamily)
+  const preferredMusicId =
+    typeof body.musicId === "string" && availableMusicAll.some((m) => m.id === body.musicId)
+      ? body.musicId
+      : null
+
   const ad = await prisma.ad.create({
     data: {
       businessId,
@@ -96,6 +134,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       aspectRatio,
       currentVersion: 0,
       preferredVoice, // persisted so a failed generation can be retried without re-picking
+      voiceoverEnabled: body.voiceover !== false,
+      occasion: occasion?.id ?? null,
+      captionsEnabled: body.captions !== false,
+      qrEnabled: body.qr !== false,
+      contactStrip: body.contactStrip === true,
+      presenterCharacterId,
+      presenterSlot: body.presenterSlot === "cta" ? "cta" : "hook",
     },
   })
 
@@ -109,7 +154,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }),
   )
 
-  const availableMusic = (await musicForFamily(templateFamily)).map((m) => ({ id: m.id, label: m.label }))
+  const availableMusic = availableMusicAll.map((m) => ({ id: m.id, label: m.label }))
   const input = makeAdScriptInput(
     {
       name: business.name,
@@ -122,6 +167,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     templateFamily,
     aspectRatio,
     availableMusic,
+    {
+      occasionBrief: occasion?.brief || null,
+      phone: business.phone,
+      website: business.website,
+    },
   )
 
   const result = await generateAdScript(input)
@@ -138,11 +188,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
   void emit("adscript_generated", { adId: ad.id, templateFamily, retry: result.repairUsed, success: true }, userId)
 
-  // Override Sonnet's voice pick if the user chose one in the picker. Sonnet
-  // still picks music/level/palette based on the business tone.
-  const finalScript = preferredVoice
-    ? { ...result.script, audio: { ...result.script.audio, voice: preferredVoice } }
-    : result.script
+  // Override Sonnet's voice/music picks with the user's explicit choices.
+  // Sonnet still picks level/palette based on the business tone.
+  const finalScript = {
+    ...result.script,
+    audio: {
+      ...result.script.audio,
+      ...(preferredVoice ? { voice: preferredVoice } : {}),
+      ...(preferredMusicId ? { music_id: preferredMusicId } : {}),
+    },
+  }
 
   // Version 1 is the first successful script. Version 0 is reserved for
   // draft-with-no-script-yet (currentVersion on Ad).

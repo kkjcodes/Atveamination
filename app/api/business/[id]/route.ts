@@ -52,6 +52,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     oneLiner?: string
     address?: string | null
     notes?: string | null
+    phone?: string | null
+    website?: string | null
     logoAssetId?: string | null
     status?: "draft" | "ready"
   }
@@ -63,6 +65,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ...(body.oneLiner !== undefined && { oneLiner: body.oneLiner.trim() }),
       ...(body.address !== undefined && { address: body.address ? body.address.trim() : null }),
       ...(body.notes !== undefined && { notes: body.notes ? body.notes.trim() : null }),
+      ...(body.phone !== undefined && { phone: body.phone ? String(body.phone).trim() : null }),
+      ...(body.website !== undefined && { website: body.website ? String(body.website).trim() : null }),
       ...(body.logoAssetId !== undefined && { logoAssetId: body.logoAssetId }),
       ...(body.status !== undefined && { status: body.status }),
     },

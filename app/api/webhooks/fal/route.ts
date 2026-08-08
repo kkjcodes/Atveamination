@@ -4,7 +4,7 @@ import { replicate, MODELS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
 import { verifyFalSecret } from "@/lib/webhooks/verify"
-import { chunkPlanForDuration } from "@/lib/video/chunk-plan"
+import { chunkPlanForScene } from "@/lib/video/chunk-plan"
 import { extractLastFrame } from "@/lib/video/extract-last-frame"
 import { finalizeChunks } from "@/lib/video/finalize-chunks"
 import { runQcAndFinalize } from "@/lib/scrapbook/finalize"
@@ -277,7 +277,7 @@ export async function POST(req: NextRequest) {
     if (hasMoreChunks) {
       // ── Advance: extract last frame, submit next chunk, return. ─────────────
       // Audio finalization waits for the FINAL chunk; do nothing else here.
-      const plan = chunkPlanForDuration(scene.durationSeconds)
+      const plan = chunkPlanForScene(scene.durationSeconds, scene.voiceScript?.trim() || scene.description)
       const framesNext = plan.framesPerChunk[chunkIndex + 1]
       if (!scene.videoPrompt) {
         console.error("[webhook/fal] chunk-advance failed: no videoPrompt cached on scene", scene.id)
@@ -304,9 +304,9 @@ export async function POST(req: NextRequest) {
 
     // ── Finalize: single-chunk, all chunks arrived, or chain broke mid-way ──
     const targetSeconds = chunkCount === 1
-      ? chunkPlanForDuration(scene.durationSeconds).targetSeconds
+      ? chunkPlanForScene(scene.durationSeconds, scene.voiceScript?.trim() || scene.description).targetSeconds
       : updatedChunkUrls.length === chunkCount
-        ? chunkPlanForDuration(scene.durationSeconds).targetSeconds
+        ? chunkPlanForScene(scene.durationSeconds, scene.voiceScript?.trim() || scene.description).targetSeconds
         : updatedChunkUrls.length * 6  // truncated by chain failure
     const finalVideoUrl = chunkCount === 1
       ? chunkClipUrl

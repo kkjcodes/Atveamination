@@ -7,6 +7,9 @@ import Nav from "@/components/nav"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import BusinessAdGenerator from "./ad-generator"
+import { musicForFamily } from "@/lib/business/music-catalog"
+import { TEMPLATE_FAMILIES, type TemplateFamily } from "@/lib/business/adscript-schema"
+import { isPresenterEligibleStyle } from "@/lib/business/presenter"
 
 // /business/[id] — business detail page. Shows the business, lets the user
 // pick a template family + aspect ratio, then triggers ad generation
@@ -48,6 +51,30 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
   }
   const photos = photoAssets.map((p) => ({ ...p, uses: uses.get(p.id) ?? 0 }))
 
+  // Music catalog per template family for the picker (label + public preview path).
+  const musicEntries = await Promise.all(
+    TEMPLATE_FAMILIES.map(async (tf) => {
+      const tracks = await musicForFamily(tf)
+      return [tf, tracks.map((t) => ({ id: t.id, label: t.label, path: t.path }))] as const
+    }),
+  )
+  const music = Object.fromEntries(musicEntries) as Record<TemplateFamily, { id: string; label: string; path: string }[]>
+
+  // Cartoon presenter candidates: any character with a picked style. Style
+  // eligibility comes from the lip-sync bench allowlist (server-side — the
+  // presenter module must not enter the client bundle).
+  const presenterChars = (await prisma.character.findMany({
+    where: { userId: session.user.id, selectedStyleUrl: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true, selectedStyleUrl: true, selectedStyle: true },
+  })).map((c) => ({
+    id: c.id,
+    name: c.name,
+    styleUrl: c.selectedStyleUrl!,
+    style: c.selectedStyle ?? "",
+    eligible: isPresenterEligibleStyle(c.selectedStyle),
+  }))
+
   const ads = business.ads
 
   return (
@@ -70,7 +97,13 @@ export default async function BusinessDetailPage({ params }: { params: Promise<{
             </CardContent>
           </Card>
         ) : (
-          <BusinessAdGenerator businessId={business.id} photos={photos} />
+          <BusinessAdGenerator
+            businessId={business.id}
+            photos={photos}
+            music={music}
+            contact={{ phone: business.phone, website: business.website }}
+            presenters={presenterChars}
+          />
         )}
 
         {ads.length > 0 && (

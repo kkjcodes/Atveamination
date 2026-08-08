@@ -90,6 +90,8 @@ model Business {
   oneLiner     String   @default("") @map("one_liner")
   address      String?
   notes        String?
+  phone        String?
+  website      String?
   logoAssetId  String?  @map("logo_asset_id")
   // Draft = incomplete onboarding; ready = photos+one-liner saved and eligible
   // for AdScript generation. Used by /business landing to route users back to
@@ -122,6 +124,25 @@ model Ad {
   currentVersion Int      @default(0) @map("current_version")
   galleryOptIn   Boolean  @default(false) @map("gallery_opt_in")
   preferredVoice String?  @map("preferred_voice")
+  // Music-only ads: script still carries vo_text (so the user can flip the
+  // toggle later and re-render), but the render skips TTS and mixes music alone.
+  voiceoverEnabled Boolean @default(true) @map("voiceover_enabled")
+  // Creative brief chip picked at creation (see lib/business/occasions.ts).
+  occasion         String?
+  // Burned-in narration subtitles (scene-level).
+  captionsEnabled  Boolean @default(true) @map("captions_enabled")
+  // QR code (website or tel:) on the end card, when contact info exists.
+  qrEnabled        Boolean @default(true) @map("qr_enabled")
+  // Persistent phone chip on every scene.
+  contactStrip     Boolean @default(false) @map("contact_strip")
+  // Cartoon presenter (Phase C): the user's Character fronts one scene of the
+  // ad (keyframe → WAN motion → LatentSync). Clip cached so re-renders only
+  // re-pay when the spoken line changes (cache key = line hash, in meta).
+  presenterCharacterId String? @map("presenter_character_id")
+  presenterSlot        String  @default("hook") @map("presenter_slot") // hook | cta
+  presenterKeyframeUrl String? @map("presenter_keyframe_url")
+  presenterClipUrl     String? @map("presenter_clip_url")
+  presenterClipLineHash String? @map("presenter_clip_line_hash")
   renderStartedAt      DateTime? @map("render_started_at")
   renderFailureCode    String?   @map("render_failure_code")
   renderFailureMessage String?   @map("render_failure_message")

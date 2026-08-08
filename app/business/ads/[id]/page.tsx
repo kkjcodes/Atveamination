@@ -10,6 +10,7 @@ import { useAsyncWork } from "@/hooks/use-async-work"
 import { AsyncWorkStatus } from "@/components/async-work-status"
 import { GenerationLoader } from "@/components/generation-loader"
 import { ASYNC_WORK_COPY } from "@/lib/copy"
+import { spinsForDate } from "@/lib/business/spins"
 import type { AsyncErrorCode } from "@/lib/async-work/errors"
 
 type AdVersion = {
@@ -81,15 +82,14 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
     return () => clearTimeout(t)
   }, [pollStatus, ad?.status, refetch])
 
-  async function submitEdit() {
-    if (!editText.trim()) return
+  async function submitEditRequest(requestText: string) {
     setBusy("edit")
     setError(null)
     try {
       const res = await fetch(`/api/business/ads/${adId}/edit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ editRequest: editText.trim() }),
+        body: JSON.stringify({ editRequest: requestText }),
       })
       if (!res.ok) {
         const data = await res.json()
@@ -102,6 +102,32 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
       setError(e instanceof Error ? e.message : "Edit failed")
     } finally {
       setBusy(null)
+    }
+  }
+
+  async function submitEdit() {
+    if (!editText.trim()) return
+    await submitEditRequest(editText.trim())
+  }
+
+  const [sizeVariants, setSizeVariants] = useState<Array<{ id: string; aspectRatio: string }>>([])
+  const [makingSizes, setMakingSizes] = useState(false)
+  async function makeAllSizes() {
+    setMakingSizes(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/business/ads/${adId}/variants`, { method: "POST" })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error ?? "Couldn't create the other sizes.")
+      // Kick off a render for each sibling; their pages show live progress.
+      for (const v of body.created ?? []) {
+        await fetch(`/api/business/ads/${v.id}/render`, { method: "POST" }).catch(() => {})
+      }
+      setSizeVariants(body.created ?? [])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't create the other sizes.")
+    } finally {
+      setMakingSizes(false)
     }
   }
 
@@ -287,10 +313,14 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
             </Card>
           )}
 
-          {/* Player */}
+          {/* Player. Rendering wins over the old video — a re-render should
+              show the loader, not last time's clip sitting there looking
+              like nothing is happening. */}
           <Card>
             <CardContent className="p-4">
-              {ad.finalVideoUrl ? (
+              {ad.status === "rendering" ? (
+                <GenerationLoader className="aspect-video" message="Making your video… usually 1–2 minutes" />
+              ) : ad.finalVideoUrl ? (
                 <>
                   <video src={ad.finalVideoUrl} controls className="w-full rounded-lg bg-black" />
                   <div className="mt-3 flex items-center gap-3">
@@ -310,15 +340,28 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
                       Show in public gallery
                     </label>
                   </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {sizeVariants.length === 0 ? (
+                      <Button size="sm" variant="outline" onClick={makeAllSizes} disabled={makingSizes || isBusy}>
+                        {makingSizes ? "Setting up sizes…" : "Make all 3 sizes — Reels, Feed, YouTube"}
+                      </Button>
+                    ) : (
+                      sizeVariants.map((v) => (
+                        <a
+                          key={v.id}
+                          href={`/business/ads/${v.id}`}
+                          className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                        >
+                          {v.aspectRatio} version →
+                        </a>
+                      ))
+                    )}
+                  </div>
                 </>
               ) : (
-                ad.status === "rendering" ? (
-                  <GenerationLoader className="aspect-video" message="Making your video… usually 1–2 minutes" />
-                ) : (
-                  <div className="aspect-video rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-400 text-sm">
-                    No video yet. Tap Make a video below.
-                  </div>
-                )
+                <div className="aspect-video rounded-lg bg-zinc-900 flex items-center justify-center text-zinc-400 text-sm">
+                  No video yet. Tap Make a video below.
+                </div>
               )}
             </CardContent>
           </Card>
@@ -329,6 +372,19 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
               <label className="text-sm font-medium text-zinc-700 block mb-2">
                 What would you change?
               </label>
+              <div className="mb-2 flex flex-wrap gap-2">
+                {spinsForDate(new Date()).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() => submitEditRequest(s.editRequest)}
+                    className="rounded-full border border-zinc-200 px-3 py-1 text-xs font-medium text-zinc-600 hover:border-amber-400 hover:text-amber-700 disabled:opacity-40"
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
               <Textarea
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}

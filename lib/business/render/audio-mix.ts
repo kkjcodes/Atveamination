@@ -7,15 +7,15 @@ import type { MusicLevel } from "@/lib/business/adscript-schema"
 // Mix contract (BUSINESS-FORK-HANDOFF.md §3.5):
 //   - VO placed at scene offsets (first VO at 0.0s after scene 0's silent
 //     lead-in of 0.2s to match the scene visuals landing).
-//   - Music bed under everything, looped/trimmed to total duration.
+//   - Music BED under the voice — not a co-lead. Licensed tracks are mastered
+//     ~10-15 dB hotter than TTS speech, so mixing them at 0 dB buried the
+//     voiceover (user-reported: "music feels like foreground"). With VO
+//     present the bed sits 14 dB down (broadcast practice: 12-15 dB under
+//     speech), ducked further while the voice is active. Music-only ads keep
+//     the music at full level — there it IS the foreground.
 //   - Music ducked under VO via sidechaincompress.
 //   - Music fades out over last 1.5s.
 //   - Whole mix loudnorm to -14 LUFS (single-pass — fast enough, close enough).
-//
-// music_level scales the pre-mix music gain BEFORE ducking:
-//   normal → 0 dB     (default; ducks to ~-18 dB under VO)
-//   quiet  → -6 dB    (ducks to ~-24 dB under VO)
-//   off    → -100 dB  (effectively silent — VO carries alone)
 
 export type SceneAudioClip = {
   audioPath: string       // local path to VO wav; null → scene is silent (end_card sometimes)
@@ -34,12 +34,17 @@ export function sceneOffsets(sceneDurations: number[]): number[] {
   return offsets
 }
 
-function musicGain(level: MusicLevel): number {
-  switch (level) {
-    case "off":    return -100
-    case "quiet":  return -6
-    case "normal": return 0
+export function musicGain(level: MusicLevel, hasVoiceover: boolean): number {
+  if (level === "off") return -100
+  if (!hasVoiceover) {
+    // Music-only ad: the music is the show.
+    return level === "quiet" ? -6 : 0
   }
+  // Bed under narration, calibrated to the industry envelope (music -18 to
+  // -24 dB under the voice WHILE SPEAKING, audible in the gaps): -12 dB static
+  // bed + ~9 dB sidechain duck ≈ -21 during speech for "normal"; "quiet"
+  // lands ≈ -27.
+  return level === "quiet" ? -18 : -12
 }
 
 // Build the full mixed audio track. Inputs: scene VO clips + music path +
@@ -91,7 +96,8 @@ export async function mixAudio(
   // the final mix. A filtergraph label can only be consumed once — reusing
   // [vobus] for both made ffmpeg fail with "Invalid stream specifier", which
   // killed every render that had both VO and music.
-  const willDuck = !!musicPath && musicGain(musicLevel) > -50
+  const hasVoiceover = filledClips.length > 0
+  const willDuck = !!musicPath && musicGain(musicLevel, hasVoiceover) > -50
   let voBus: string | null = null
   let voSidechain: string | null = null
   if (voLabels.length > 0) {
@@ -115,15 +121,20 @@ export async function mixAudio(
   if (musicPath) {
     args.push("-stream_loop", "-1", "-i", musicPath)
     const mIdx = inputIdx++
-    const gain = musicGain(musicLevel)
+    const gain = musicGain(musicLevel, hasVoiceover)
     const fadeStart = Math.max(0, totalDurationSec - 1.5).toFixed(3)
     filterParts.push(
       `[${mIdx}:a]volume=${gain}dB,atrim=0:${totalDurationSec.toFixed(3)},afade=type=out:start_time=${fadeStart}:duration=1.5[musictrim]`,
     )
     if (voSidechain) {
       // Duck music under VO.
+      // threshold 0.03 (≈ -30 dB): typical TTS speech sits ~10 dB above it, so
+      // the 8:1 ratio dips the bed ~9 dB while the voice is talking (the old
+      // 0.05 threshold only managed ~5 dB of duck). Combined with the -12 dB
+      // bed this puts music ≈ -21 dB under the voice during speech — the
+      // middle of the -18..-24 professional range.
       filterParts.push(
-        `[musictrim]${voSidechain}sidechaincompress=threshold=0.05:ratio=8:attack=5:release=250[mducked]`,
+        `[musictrim]${voSidechain}sidechaincompress=threshold=0.03:ratio=8:attack=5:release=250[mducked]`,
       )
       musicOut = "[mducked]"
     } else {

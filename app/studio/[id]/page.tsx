@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { GenerationLoader } from "@/components/generation-loader"
+import { orchestrateSceneGeneration } from "@/lib/studio/orchestrate"
 import type { Character, JobStatus } from "@/types"
 
 const MAX_SCENES = 100
@@ -87,6 +88,7 @@ export default function StudioProjectPage() {
   const [voiceId, setVoiceId] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [currentSceneIndex, setCurrentSceneIndex] = useState<number | null>(null)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
   const [stitching, setStitching] = useState(false)
   const [finalVideoUrl, setFinalVideoUrl] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -274,6 +276,25 @@ export default function StudioProjectPage() {
     setCurrentSceneIndex(null)
   }, [generating, runScene])
 
+  // Polls a scene until its keyframe image lands in the DB. Scenes after the
+  // first anchor their image generation on scene 1's keyframe, so the
+  // orchestrator holds them back until this resolves.
+  const pollImageReady = useCallback(async (sceneId: string) => {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 3000))
+      const res = await fetch(`/api/scenes/${sceneId}`)
+      if (!res.ok) continue
+      const { scene } = await res.json()
+      if (scene.generation_phase === "failed") throw new Error("Scene 1 failed")
+      if (scene.image_url) return
+    }
+    throw new Error("Timed out waiting for the first scene's image")
+  }, [])
+
+  // Parallel batch generation via the shared orchestrator (same flow as
+  // /studio/new): scene 1's keyframe first, then every remaining scene starts
+  // concurrently. The old for-await loop ran scenes strictly one at a time —
+  // 5 scenes took 6-8 minutes instead of the slowest scene's ~2.
   const generateAllRemaining = useCallback(async () => {
     setError(null)
     setGenerating(true)
@@ -282,19 +303,96 @@ export default function StudioProjectPage() {
       .map((s, i) => ({ ...s, _index: i }))
       .filter((s) => !s.videoClipUrl && s.description.trim())
 
+    if (toProcess.length === 0) { setGenerating(false); return }
     toProcess.forEach(({ _index }) => updateScene(_index, { status: "pending" }))
+    setBatchProgress({ done: 0, total: toProcess.length })
+    const bumpDone = () => setBatchProgress((p) => (p ? { ...p, done: p.done + 1 } : p))
 
     try {
-      for (const { _index } of toProcess) {
-        setCurrentSceneIndex(_index)
-        const result = await runScene(_index)
-        if (result === "limit") break
-      }
+      // Ensure every scene has a row and a fresh description first.
+      const withIds = await Promise.all(
+        toProcess.map(async (item) => {
+          const { _index } = item
+          let sceneId = item.id
+          if (!sceneId) {
+            const res = await fetch(`/api/projects/${projectId}/scenes`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                scenes: [{ description: item.description, voice_script: item.voiceScript || undefined, order_index: _index, duration_seconds: item.durationSeconds }],
+              }),
+            })
+            if (!res.ok) { updateScene(_index, { status: "failed" }); return { ...item, resolvedId: null as string | null } }
+            const { scenes: [created] } = await res.json()
+            updateScene(_index, { id: created.id })
+            sceneId = created.id
+          } else {
+            await fetch(`/api/scenes/${sceneId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ description: item.description, voiceScript: item.voiceScript || null, durationSeconds: item.durationSeconds }),
+            }).catch(() => {})
+          }
+          return { ...item, resolvedId: sceneId as string | null }
+        }),
+      )
+      const valid = withIds.filter((x) => x.resolvedId !== null)
+      if (valid.length === 0) return
+
+      await orchestrateSceneGeneration(
+        valid.map(({ resolvedId, _index }) => ({ sceneId: resolvedId!, orderIndex: _index })),
+        {
+          startGeneration: async (sceneId) => {
+            const item = valid.find((x) => x.resolvedId === sceneId)!
+            updateScene(item._index, { status: "processing", videoClipUrl: null, audioUrl: null, imageUrl: null })
+            const genRes = await fetch(`/api/scenes/${sceneId}/generate`, { method: "POST" })
+            if (!genRes.ok) {
+              const data = await genRes.json().catch(() => ({})) as { error?: string; used?: number; limit?: number }
+              if (genRes.status === 429) {
+                setError(`Daily scene limit reached (${data.used ?? "?"}/${data.limit ?? "?"}).`)
+                setLimitReached(true)
+                setSceneQuota((q) => q ? { ...q, used: data.used ?? q.used } : q)
+                updateScene(item._index, { status: "idle" })
+              } else {
+                setError(genRes.status === 422 ? (data.error ?? "") : `Scene ${item._index + 1} failed to generate. Please try again.`)
+                updateScene(item._index, { status: "failed" })
+              }
+            } else {
+              setSceneQuota((q) => q && !q.unlimited ? { ...q, used: q.used + 1 } : q)
+            }
+          },
+          pollImageReady,
+          pollDone: async (sceneId) => {
+            const item = valid.find((x) => x.resolvedId === sceneId)!
+            const current = scenesRef.current[item._index]
+            if (current.status === "failed" || current.status === "idle") { bumpDone(); return }
+            try {
+              const done = await pollScene(sceneId)
+              updateScene(item._index, {
+                status: "succeeded",
+                imageUrl: (done.image_url as string) ?? null,
+                videoClipUrl: (done.video_clip_url as string) ?? null,
+                audioUrl: (done.audio_url as string) ?? null,
+              })
+            } catch {
+              updateScene(item._index, { status: "failed" })
+            } finally {
+              bumpDone()
+            }
+          },
+        },
+      )
+    } catch {
+      setError("The first scene's image didn't come through. Try again.")
+      scenesRef.current.forEach((s, i) => {
+        if (s.status === "pending" || s.status === "processing") updateScene(i, { status: "failed" })
+      })
     } finally {
       setGenerating(false)
       setCurrentSceneIndex(null)
+      setBatchProgress(null)
     }
-  }, [updateScene, runScene])
+  }, [projectId, updateScene, pollScene, pollImageReady])
 
   const generateFinalVideo = useCallback(async () => {
     const clipsWithoutAudio = scenes.filter((s) => s.videoClipUrl && !s.audioUrl).length
@@ -324,7 +422,9 @@ export default function StudioProjectPage() {
 
   const remaining = scenes.filter((s) => !s.videoClipUrl && s.description.trim())
   const allScenesHaveClips = scenes.length > 0 && scenes.every((s) => s.videoClipUrl)
-  const progressPercent = currentSceneIndex !== null ? Math.round(((currentSceneIndex + 1) / scenes.length) * 100) : 0
+  const progressPercent = batchProgress
+    ? Math.round((batchProgress.done / batchProgress.total) * 100)
+    : currentSceneIndex !== null ? Math.round(((currentSceneIndex + 1) / scenes.length) * 100) : 0
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-zinc-50">
@@ -524,7 +624,11 @@ export default function StudioProjectPage() {
           {(generating || stitching) && (
             <div className="bg-violet-50 border-b border-violet-200 px-4 md:px-8 py-4 shrink-0">
               <p className="text-sm font-medium text-violet-800 mb-2">
-                {stitching ? "Stitching clips into final video..." : `Generating scene ${(currentSceneIndex ?? 0) + 1}...`}
+                {stitching
+                  ? "Stitching clips into final video..."
+                  : batchProgress
+                    ? `Generating ${batchProgress.total} scenes at once — ${batchProgress.done} finished`
+                    : `Generating scene ${(currentSceneIndex ?? 0) + 1}...`}
               </p>
               <Progress value={stitching ? 90 : progressPercent} className="h-2" />
               {!stitching && (

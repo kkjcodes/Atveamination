@@ -13,6 +13,7 @@ import {
   type AspectRatio,
   type Voice,
 } from "@/lib/business/adscript-schema"
+import { occasionsForDate } from "@/lib/business/occasions"
 
 const TEMPLATE_LABELS: Record<TemplateFamily, string> = {
   clean_modern: "Understated",
@@ -124,7 +125,22 @@ function PreviewBadge() {
   )
 }
 
-export default function BusinessAdGenerator({ businessId, photos: initialPhotos }: { businessId: string; photos: PickerPhoto[] }) {
+export type MusicTile = { id: string; label: string; path: string }
+export type PresenterChar = { id: string; name: string; styleUrl: string; style: string; eligible: boolean }
+
+export default function BusinessAdGenerator({
+  businessId,
+  photos: initialPhotos,
+  music,
+  contact,
+  presenters,
+}: {
+  businessId: string
+  photos: PickerPhoto[]
+  music: Record<TemplateFamily, MusicTile[]>
+  contact: { phone: string | null; website: string | null }
+  presenters: PresenterChar[]
+}) {
   const router = useRouter()
   const [photos, setPhotos] = useState<PickerPhoto[]>(initialPhotos)
   // Selection order = the order photos appear in the ad. Default: the user's
@@ -136,7 +152,33 @@ export default function BusinessAdGenerator({ businessId, photos: initialPhotos 
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [templateFamily, setTemplateFamily] = useState<TemplateFamily>("bold_promo")
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("9:16")
+  const [voiceover, setVoiceover] = useState(true)
+  const [occasion, setOccasion] = useState("showcase")
+  const [musicId, setMusicId] = useState<string | null>(null) // null = let AI match
+  const [playingMusic, setPlayingMusic] = useState<string | null>(null)
+  const [captions, setCaptions] = useState(true)
+  const [phone, setPhone] = useState(contact.phone ?? "")
+  const [website, setWebsite] = useState(contact.website ?? "")
+  const [qr, setQr] = useState(true)
+  const [contactStrip, setContactStrip] = useState(false)
+  const [presenterId, setPresenterId] = useState<string | null>(null)
+  const [presenterSlot, setPresenterSlot] = useState<"hook" | "cta">("hook")
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null)
   const [voice, setVoice] = useState<Voice>(DEFAULT_VOICE_FOR_TEMPLATE.bold_promo)
+
+  function playMusicSample(tile: MusicTile) {
+    if (musicAudioRef.current) {
+      musicAudioRef.current.pause()
+      musicAudioRef.current.currentTime = 0
+    }
+    if (playingMusic === tile.id) { setPlayingMusic(null); return }
+    const audio = new Audio(tile.path)
+    musicAudioRef.current = audio
+    setPlayingMusic(tile.id)
+    audio.onended = () => setPlayingMusic(null)
+    audio.onerror = () => setPlayingMusic(null)
+    audio.play().catch(() => setPlayingMusic(null))
+  }
   const [voiceEdited, setVoiceEdited] = useState(false)
   const [playingVoice, setPlayingVoice] = useState<Voice | null>(null)
   const [busy, setBusy] = useState(false)
@@ -226,10 +268,31 @@ export default function BusinessAdGenerator({ businessId, photos: initialPhotos 
     setBusy(true)
     setError(null)
     try {
+      // Persist contact edits so the script and end card can use them.
+      if (phone.trim() !== (contact.phone ?? "") || website.trim() !== (contact.website ?? "")) {
+        await fetch(`/api/business/${businessId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone: phone.trim() || null, website: website.trim() || null }),
+        }).catch(() => {})
+      }
       const res = await fetch(`/api/business/${businessId}/ads`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateFamily, aspectRatio, voice, assetIds: selectedIds }),
+        body: JSON.stringify({
+          templateFamily,
+          aspectRatio,
+          voice,
+          assetIds: selectedIds,
+          voiceover,
+          occasion,
+          musicId,
+          captions,
+          qr,
+          contactStrip,
+          presenterCharacterId: voiceover && templateFamily !== "scrapbook" ? presenterId : null,
+          presenterSlot,
+        }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: "" }))
@@ -363,6 +426,24 @@ export default function BusinessAdGenerator({ businessId, photos: initialPhotos 
         </div>
 
         <div>
+          <Label className="text-sm font-medium text-zinc-700 mb-2 block">What&apos;s this ad for?</Label>
+          <div className="flex flex-wrap gap-2">
+            {occasionsForDate(new Date()).map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setOccasion(o.id)}
+                className={`rounded-full border-2 px-3 py-1.5 text-sm font-medium transition-colors ${
+                  occasion === o.id ? "border-amber-500 bg-amber-50 text-amber-900" : "border-zinc-200 text-zinc-600 hover:border-zinc-300"
+                }`}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
           <Label className="text-sm font-medium text-zinc-700 mb-2 block">Pick a look</Label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {TEMPLATE_FAMILIES.map((tf) => (
@@ -415,6 +496,72 @@ export default function BusinessAdGenerator({ businessId, photos: initialPhotos 
         )}
 
         <div>
+          <Label className="text-sm font-medium text-zinc-700 mb-2 block">Sound</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setVoiceover(true)}
+              className={`text-left rounded-xl border-2 px-4 py-3 transition-colors ${
+                voiceover ? "border-amber-500 bg-amber-50" : "border-zinc-200 hover:border-zinc-300"
+              }`}
+            >
+              <div className="font-medium text-zinc-900">🎙️ Voice + music</div>
+              <div className="text-xs text-zinc-500 mt-1">A narrator reads your ad over the soundtrack.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setVoiceover(false)}
+              className={`text-left rounded-xl border-2 px-4 py-3 transition-colors ${
+                !voiceover ? "border-amber-500 bg-amber-50" : "border-zinc-200 hover:border-zinc-300"
+              }`}
+            >
+              <div className="font-medium text-zinc-900">🎵 Music only</div>
+              <div className="text-xs text-zinc-500 mt-1">No narration — just your photos, on-screen text, and the soundtrack.</div>
+            </button>
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-sm text-zinc-600 cursor-pointer">
+            <input type="checkbox" checked={captions} onChange={(e) => setCaptions(e.target.checked)} className="rounded" />
+            Show the words on screen (captions) — most people watch with sound off
+          </label>
+        </div>
+
+        <div>
+          <Label className="text-sm font-medium text-zinc-700 mb-2 block">Pick the music</Label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setMusicId(null)}
+              className={`text-left rounded-xl border-2 px-4 py-3 transition-colors ${
+                musicId === null ? "border-amber-500 bg-amber-50" : "border-zinc-200 hover:border-zinc-300"
+              }`}
+            >
+              <div className="font-medium text-zinc-900">✦ Let AI match</div>
+              <div className="text-xs text-zinc-500 mt-1">Picks a track that fits your business&apos;s tone.</div>
+            </button>
+            {(music[templateFamily] ?? []).map((t) => (
+              <div
+                key={t.id}
+                className={`rounded-xl border-2 px-4 py-3 transition-colors ${
+                  musicId === t.id ? "border-amber-500 bg-amber-50" : "border-zinc-200 hover:border-zinc-300"
+                }`}
+              >
+                <button type="button" onClick={() => setMusicId(t.id)} className="text-left w-full">
+                  <div className="font-medium text-zinc-900">{t.label}</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => playMusicSample(t)}
+                  className="mt-1 text-xs font-medium text-amber-700 hover:text-amber-800"
+                >
+                  {playingMusic === t.id ? "Stop" : "Play sample"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {voiceover && (
+        <div>
           <Label className="text-sm font-medium text-zinc-700 mb-2 block">Pick a voice</Label>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {VOICES.map((v) => {
@@ -452,6 +599,107 @@ export default function BusinessAdGenerator({ businessId, photos: initialPhotos 
                 </div>
               )
             })}
+          </div>
+        </div>
+        )}
+
+        <div>
+          <Label className="text-sm font-medium text-zinc-700 mb-1 block">
+            Presenter <span className="ml-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">Only on AtVeAnimation</span>
+          </Label>
+          <p className="text-xs text-zinc-500 mb-2">
+            Your cartoon character opens the ad and speaks the first line — lip-synced to the narration.
+          </p>
+          {!voiceover || templateFamily === "scrapbook" ? (
+            <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+              {!voiceover
+                ? "Presenters need narration — switch Sound to Voice + music to use one."
+                : "Presenters aren't available in the scrapbook look yet."}
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPresenterId(null)}
+                  className={`flex aspect-square flex-col items-center justify-center rounded-xl border-2 text-xs transition-colors ${
+                    presenterId === null ? "border-amber-500 bg-amber-50 text-amber-900" : "border-zinc-200 text-zinc-500 hover:border-zinc-300"
+                  }`}
+                >
+                  No presenter
+                </button>
+                {presenters.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    disabled={!c.eligible}
+                    onClick={() => setPresenterId(c.id)}
+                    title={c.eligible ? undefined : `The ${c.style} style can't present yet`}
+                    className={`relative aspect-square overflow-hidden rounded-xl border-2 transition-colors ${
+                      presenterId === c.id ? "border-amber-500" : "border-zinc-200 hover:border-zinc-300"
+                    } ${c.eligible ? "" : "opacity-40 cursor-not-allowed"}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={c.styleUrl} alt={c.name} className="h-full w-full object-cover" />
+                    <span className="absolute inset-x-0 bottom-0 bg-black/60 px-1 py-0.5 text-[10px] text-white truncate">
+                      {c.name}{c.eligible ? "" : " — can't present yet"}
+                    </span>
+                  </button>
+                ))}
+                <a
+                  href="/character/new"
+                  target="_blank"
+                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-zinc-300 text-center text-xs text-zinc-400 transition-colors hover:border-amber-400 hover:text-amber-600"
+                >
+                  <span className="text-2xl leading-none">+</span>
+                  New character from a selfie
+                </a>
+              </div>
+              {presenterId && (
+                <div className="mt-2 flex items-center gap-3 text-sm text-zinc-600">
+                  Speaks:
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" checked={presenterSlot === "hook"} onChange={() => setPresenterSlot("hook")} />
+                    The opening line
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" checked={presenterSlot === "cta"} onChange={() => setPresenterSlot("cta")} />
+                    The closing call-to-action
+                  </label>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div>
+          <Label className="text-sm font-medium text-zinc-700 mb-1 block">Contact on your ad</Label>
+          <p className="text-xs text-zinc-500 mb-2">Shown on the end card so people can reach you.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="Phone — 555-013-0142"
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none"
+            />
+            <input
+              type="url"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="Website — yourbusiness.com"
+              className="rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none"
+            />
+          </div>
+          <div className="mt-2 flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm text-zinc-600 cursor-pointer">
+              <input type="checkbox" checked={qr} onChange={(e) => setQr(e.target.checked)} className="rounded" />
+              QR code on the end card
+            </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-600 cursor-pointer">
+              <input type="checkbox" checked={contactStrip} onChange={(e) => setContactStrip(e.target.checked)} className="rounded" />
+              Phone on every scene
+            </label>
           </div>
         </div>
 

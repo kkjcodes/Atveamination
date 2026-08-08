@@ -28,6 +28,13 @@ describe("mapProviderError", () => {
     expect(e.code).toBe("input_invalid")
   })
 
+  it("recognizes the business TTS voice-service guard specifically", () => {
+    const e = mapProviderError(new Error("The voice service is taking too long right now (waited 150s)"))
+    expect(e.code).toBe("provider_timeout")
+    expect(e.message).toContain("voice service is busy")
+    expect(e.retryable).toBe(true)
+  })
+
   it("recognizes timeouts", () => {
     for (const msg of ["ETIMEDOUT", "request timed out", "Timeout after 300s"]) {
       const e = mapProviderError(new Error(msg))

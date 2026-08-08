@@ -11,6 +11,8 @@ import {
   overlayTextForScene,
   escapeDrawtext,
   fitFontSize,
+  captionFragment,
+  contactStripFragment,
 } from "@/lib/business/render/text-overlay"
 
 // Per-scene renderer. Given a scene, its source image (or logo), the target
@@ -34,6 +36,46 @@ export type SceneRenderInput = {
   captionFontPath: string | null   // handwriting for scrapbook, sans elsewhere
   paletteBgHex: string       // for bold_promo band
   textPosition: "upper_third" | "center" | "lower_third"
+  // Burned-in narration subtitle (clean_modern + bold_promo; scrapbook keeps
+  // its handwritten aesthetic uncluttered).
+  captionText?: string | null
+  // Persistent phone chip near the top of non-end-card scenes (opt-in).
+  contactStripText?: string | null
+  // Pre-rendered QR PNG composited onto the end card's bottom-right corner.
+  qrPngPath?: string | null
+}
+
+// End cards optionally composite a QR PNG bottom-right. One shared arg
+// builder so all three templates treat the QR identically.
+function endCardFfmpegArgs(
+  inputArgs: string[],       // args producing input [0:v] (photo/color source)
+  baseFilter: string,        // filter chain for [0:v] (motion + text stack)
+  qrPngPath: string | null | undefined,
+  width: number,
+  height: number,
+  durationSec: number,
+  outputPath: string,
+): string[] {
+  const tail = [
+    "-t", durationSec.toFixed(3),
+    "-r", String(OUTPUT_FPS),
+    "-pix_fmt", "yuv420p",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "20",
+    outputPath,
+  ]
+  if (!qrPngPath) {
+    return ["-y", "-v", "error", ...inputArgs, "-vf", `${baseFilter},format=yuv420p`, ...tail]
+  }
+  const qrSize = Math.round(Math.min(width, height) * 0.18)
+  const margin = Math.round(Math.min(width, height) * 0.04)
+  const complex = [
+    `[0:v]${baseFilter}[base]`,
+    `[1:v]scale=${qrSize}:${qrSize}[qr]`,
+    `[base][qr]overlay=${width - qrSize - margin}:${height - qrSize - margin},format=yuv420p[v]`,
+  ].join(";")
+  return ["-y", "-v", "error", ...inputArgs, "-i", qrPngPath, "-filter_complex", complex, "-map", "[v]", ...tail]
 }
 
 // clean_modern: full-bleed photo with motion + lower-third caption.
@@ -42,17 +84,24 @@ async function renderCleanModern(input: SceneRenderInput): Promise<void> {
   const motion = scene.type === "end_card" ? "hold" : scene.motion
   const motionFilter = buildMotionFilter(motion, durationSec, width, height)
 
-  let filter: string
   if (scene.type === "end_card") {
     const stack = endCardStack(scene.lines, width, height, captionFontPath)
-    filter = `${motionFilter},${stack},format=yuv420p`
-  } else {
-    const text = overlayTextForScene(scene)
-    const overlay = text
-      ? "," + drawtextFragment(text, textPosition, width, height, captionFontPath)
-      : ""
-    filter = `${motionFilter}${overlay},format=yuv420p`
+    await runFfmpeg(endCardFfmpegArgs(
+      ["-loop", "1", "-i", sourceImagePath],
+      `${motionFilter},${stack}`,
+      input.qrPngPath,
+      width, height, durationSec, outputPath,
+    ))
+    return
   }
+
+  const text = overlayTextForScene(scene)
+  const extras = [
+    text ? drawtextFragment(text, textPosition, width, height, captionFontPath) : null,
+    input.captionText ? captionFragment(input.captionText, width, height, captionFontPath) : null,
+    input.contactStripText ? contactStripFragment(input.contactStripText, width, height, captionFontPath) : null,
+  ].filter(Boolean)
+  const filter = [motionFilter, ...extras, "format=yuv420p"].join(",")
 
   await runFfmpeg([
     "-y", "-v", "error",
@@ -80,23 +129,35 @@ async function renderBoldPromo(input: SceneRenderInput): Promise<void> {
   const bandH = Math.round(height * 0.28)
   const bandY = height - bandH - Math.round(height * 0.05)
 
-  let filter: string
   if (scene.type === "end_card") {
     const stack = endCardStack(scene.lines, width, height, captionFontPath)
-    filter = `${motionFilter},${stack},format=yuv420p`
-  } else {
-    const text = overlayTextForScene(scene) ?? ""
-    // Drawbox behind the text.
-    const band = `drawbox=x=0:y=${bandY}:w=${width}:h=${bandH}:color=${paletteBgHex}@0.85:t=fill`
-    const font = captionFontPath ? `fontfile='${captionFontPath}'` : `font='sans'`
-    // fitFontSize prevents long benefit lines (up to 12 words) from clipping
-    // off the frame edges — the naive height * 0.08 was ~154px on 9:16, wider
-    // than the 1080 frame for anything past ~14 chars.
-    const fontSize = fitFontSize(text, width, Math.round(height * 0.08))
-    const textY = bandY + Math.round(bandH / 2 - fontSize / 2)
-    const drawtext = `drawtext=text='${escapeDrawtext(text)}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${textY}:borderw=3:bordercolor=0x00000080`
-    filter = `${motionFilter},${band},${drawtext},format=yuv420p`
+    await runFfmpeg(endCardFfmpegArgs(
+      ["-loop", "1", "-i", sourceImagePath],
+      `${motionFilter},${stack}`,
+      input.qrPngPath,
+      width, height, durationSec, outputPath,
+    ))
+    return
   }
+
+  const text = overlayTextForScene(scene) ?? ""
+  // Drawbox behind the text.
+  const band = `drawbox=x=0:y=${bandY}:w=${width}:h=${bandH}:color=${paletteBgHex}@0.85:t=fill`
+  const font = captionFontPath ? `fontfile='${captionFontPath}'` : `font='sans'`
+  // fitFontSize prevents long benefit lines (up to 12 words) from clipping
+  // off the frame edges — the naive height * 0.08 was ~154px on 9:16, wider
+  // than the 1080 frame for anything past ~14 chars.
+  const fontSize = fitFontSize(text, width, Math.round(height * 0.08))
+  const textY = bandY + Math.round(bandH / 2 - fontSize / 2)
+  const drawtext = `drawtext=text='${escapeDrawtext(text)}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${textY}:borderw=3:bordercolor=0x00000080`
+  const extras = [
+    // Caption sits above the band (band bottom margin + band height).
+    input.captionText
+      ? captionFragment(input.captionText, width, height, captionFontPath, height - bandY)
+      : null,
+    input.contactStripText ? contactStripFragment(input.contactStripText, width, height, captionFontPath) : null,
+  ].filter(Boolean)
+  const filter = [motionFilter, band, drawtext, ...extras, "format=yuv420p"].join(",")
 
   await runFfmpeg([
     "-y", "-v", "error",
@@ -122,19 +183,12 @@ async function renderScrapbook(input: SceneRenderInput): Promise<void> {
   if (scene.type === "end_card") {
     const stack = endCardStack(scene.lines, width, height, captionFontPath)
     // Special case: end_card in scrapbook uses a solid parchment (no photo).
-    await runFfmpeg([
-      "-y", "-v", "error",
-      "-f", "lavfi",
-      "-i", `color=c=0xF5EBDC:s=${width}x${height}:r=${OUTPUT_FPS}:d=${durationSec.toFixed(3)}`,
-      "-vf", `${stack},format=yuv420p`,
-      "-t", durationSec.toFixed(3),
-      "-r", String(OUTPUT_FPS),
-      "-pix_fmt", "yuv420p",
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-crf", "20",
-      outputPath,
-    ])
+    await runFfmpeg(endCardFfmpegArgs(
+      ["-f", "lavfi", "-i", `color=c=0xF5EBDC:s=${width}x${height}:r=${OUTPUT_FPS}:d=${durationSec.toFixed(3)}`],
+      stack,
+      input.qrPngPath,
+      width, height, durationSec, outputPath,
+    ))
     return
   }
 
@@ -160,6 +214,59 @@ async function renderScrapbook(input: SceneRenderInput): Promise<void> {
     "-loop", "1", "-i", sourceImagePath,
     "-filter_complex", complex,
     "-map", "[v]",
+    "-t", durationSec.toFixed(3),
+    "-r", String(OUTPUT_FPS),
+    "-pix_fmt", "yuv420p",
+    "-c:v", "libx264",
+    "-preset", "veryfast",
+    "-crf", "20",
+    outputPath,
+  ])
+}
+
+// Presenter scene: a lip-synced video clip takes the photo's place. Same
+// blur-fill treatment as photos (16:9 clip inside any ad aspect), same
+// template overlays. Clip audio is stripped — narration flows through the
+// normal audio mix so ducking/loudnorm apply. If the clip is shorter than the
+// scene, the last frame holds (tpad clone).
+// v1: clean_modern + bold_promo only (scrapbook's parchment collage would
+// clash with a full-bleed presenter).
+export async function renderPresenterScene(
+  input: SceneRenderInput & { clipPath: string },
+): Promise<void> {
+  const { scene, clipPath, durationSec, outputPath, width, height, captionFontPath, paletteBgHex, textPosition } = input
+  if (scene.type === "end_card") throw new Error("presenter scene cannot be an end_card")
+
+  const normalize = [
+    `split=2[pf_bg][pf_fg]`,
+    `[pf_bg]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},boxblur=32:2[pf_bgb]`,
+    `[pf_fg]scale=${width}:${height}:force_original_aspect_ratio=decrease[pf_fgs]`,
+    `[pf_bgb][pf_fgs]overlay=(W-w)/2:(H-h)/2,setsar=1,tpad=stop_mode=clone:stop=-1`,
+  ].join(";")
+
+  const text = overlayTextForScene(scene)
+  const overlays: string[] = []
+  if (input.templateFamily === "bold_promo" && text) {
+    const bandH = Math.round(height * 0.28)
+    const bandY = height - bandH - Math.round(height * 0.05)
+    const font = captionFontPath ? `fontfile='${captionFontPath}'` : `font='sans'`
+    const fontSize = fitFontSize(text, width, Math.round(height * 0.08))
+    const textY = bandY + Math.round(bandH / 2 - fontSize / 2)
+    overlays.push(`drawbox=x=0:y=${bandY}:w=${width}:h=${bandH}:color=${paletteBgHex}@0.85:t=fill`)
+    overlays.push(`drawtext=text='${escapeDrawtext(text)}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${textY}:borderw=3:bordercolor=0x00000080`)
+    if (input.captionText) overlays.push(captionFragment(input.captionText, width, height, captionFontPath, height - bandY))
+  } else {
+    if (text) overlays.push(drawtextFragment(text, textPosition, width, height, captionFontPath))
+    if (input.captionText) overlays.push(captionFragment(input.captionText, width, height, captionFontPath))
+  }
+  if (input.contactStripText) overlays.push(contactStripFragment(input.contactStripText, width, height, captionFontPath))
+
+  const filter = [normalize, ...overlays, "format=yuv420p"].join(",")
+  await runFfmpeg([
+    "-y", "-v", "error",
+    "-i", clipPath,
+    "-vf", filter,
+    "-an",
     "-t", durationSec.toFixed(3),
     "-r", String(OUTPUT_FPS),
     "-pix_fmt", "yuv420p",

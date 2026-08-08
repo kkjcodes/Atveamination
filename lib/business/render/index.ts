@@ -4,11 +4,14 @@ import { promises as fs } from "fs"
 import { uploadBlob } from "@/lib/storage/client"
 import type { AdScript, PaletteHint } from "@/lib/business/adscript-schema"
 import { dimensionsFor, OUTPUT_FPS } from "@/lib/business/render/dimensions"
-import { renderScene, runFfmpeg } from "@/lib/business/render/scene"
+import { renderScene, renderPresenterScene, runFfmpeg } from "@/lib/business/render/scene"
+import { generatePresenterClip } from "@/lib/business/presenter"
 import { mixAudio, sceneOffsets } from "@/lib/business/render/audio-mix"
 import { renderWatermarkOutro, WATERMARK_OUTRO_SEC } from "@/lib/business/render/watermark"
 import { synthesize } from "@/lib/business/tts"
 import { resolveMusicSource } from "@/lib/business/music-catalog"
+import { qrTarget, writeQrPng } from "@/lib/business/render/qr"
+import { dominantColorHex } from "@/lib/business/render/brand-color"
 
 // The pure-function contract from BUSINESS-FORK-HANDOFF.md §3:
 //   (ad_script, assets) -> mp4
@@ -26,6 +29,7 @@ export type RenderResult = {
   finalVideoUrl: string
   durationSec: number
   totalSceneDurations: number[]
+  presenter?: PresenterOutcome
 }
 
 // Palette hex per palette_hint. Used by bold_promo template's band color.
@@ -36,29 +40,84 @@ const PALETTE_HEX: Record<PaletteHint, string> = {
   bright:  "0xDB2777",   // pink-600
 }
 
+export type RenderOptions = {
+  voiceoverEnabled?: boolean
+  captionsEnabled?: boolean
+  qrEnabled?: boolean
+  contactStrip?: boolean
+  contact?: { phone: string | null; website: string | null } | null
+  // Cartoon presenter (Phase C1). Requires voiceoverEnabled — the presenter
+  // lip-syncs to the slot scene's narration. Any presenter failure falls back
+  // to rendering the slot as a normal photo scene.
+  presenter?: {
+    characterId: string
+    styleImageUrl: string
+    slot: "hook" | "cta"
+    replicateToken: string
+    cached: { clipUrl: string | null; keyframeUrl: string | null; lineHash: string | null }
+  } | null
+}
+
+export type PresenterOutcome = {
+  used: boolean
+  clipUrl?: string
+  keyframeUrl?: string
+  lineHash?: string
+  fallbackReason?: string
+}
+
 export async function renderAd(
   script: AdScript,
   assets: RenderAssets,
   adId: string,
+  options: RenderOptions = {},
 ): Promise<RenderResult> {
+  const voiceoverEnabled = options.voiceoverEnabled !== false
+  const captionsEnabled = options.captionsEnabled !== false
   const dims = dimensionsFor(script.aspect_ratio)
-  const paletteBg = PALETTE_HEX[script.style.palette_hint]
 
   const sessionId = `atve_ad_${adId}_${Date.now()}`
   const workDir = join(tmpdir(), sessionId)
   await fs.mkdir(workDir, { recursive: true })
+
+  // Brand color: dominant saturated color from the logo drives the bold_promo
+  // band; grayscale/missing logo falls back to the AI's palette hint.
+  let paletteBg = PALETTE_HEX[script.style.palette_hint]
+  const endCardScene = script.scenes.find((s) => s.type === "end_card")
+  const logoPath = endCardScene?.type === "end_card" && endCardScene.logo_asset_id
+    ? assets.imagePaths.get(endCardScene.logo_asset_id) ?? null
+    : null
+  if (logoPath) {
+    const brandHex = await dominantColorHex(logoPath)
+    if (brandHex) paletteBg = brandHex
+  }
+
+  // End-card QR (website preferred, else tel:). Generated locally, zero cost.
+  let qrPngPath: string | null = null
+  if (options.qrEnabled !== false) {
+    const target = qrTarget(options.contact?.website, options.contact?.phone)
+    if (target) {
+      qrPngPath = join(workDir, "qr.png")
+      await writeQrPng(target, qrPngPath).catch(() => { qrPngPath = null })
+    }
+  }
+  const contactStripText = options.contactStrip && options.contact?.phone
+    ? options.contact.phone
+    : null
 
   const rt0 = Date.now()
   const rlog = (msg: string) => console.log(`[renderAd] ${adId} ${msg} elapsed=${((Date.now() - rt0) / 1000).toFixed(1)}s`)
 
   try {
     // ── 1. Per-scene TTS synthesis (cache-first) ────────────────────────────
-    rlog("phase1 TTS start")
+    // Music-only ads skip TTS entirely: scene durations fall back to
+    // min_seconds and the mixer runs its music-alone path.
+    rlog(voiceoverEnabled ? "phase1 TTS start" : "phase1 TTS skipped (music-only ad)")
     const voResults: Array<{ audioUrl: string; audioPath: string; durationSec: number } | null> = []
     for (let i = 0; i < script.scenes.length; i++) {
       const scene = script.scenes[i]
       const voText = scene.type === "end_card" ? (scene.vo_text ?? "") : scene.vo_text
-      if (!voText || voText.trim() === "") {
+      if (!voiceoverEnabled || !voText || voText.trim() === "") {
         voResults.push(null)
         continue
       }
@@ -81,6 +140,48 @@ export async function renderAd(
       return Math.max(scene.min_seconds, voDur > 0 ? voDur + 0.5 : scene.min_seconds)
     })
     const totalScenesSec = sceneDurations.reduce((a, b) => a + b, 0)
+
+    // ── 2b. Presenter clip (Phase C1) ───────────────────────────────────────
+    // Runs after TTS so the slot scene's narration audio exists to sync to.
+    // Bounded end-to-end; any failure → photo fallback, never a broken mouth.
+    let presenterOutcome: PresenterOutcome = { used: false }
+    let presenterSceneIndex = -1
+    let presenterClipPath: string | null = null
+    if (options.presenter && voiceoverEnabled) {
+      const nonEnd = script.scenes
+        .map((s, i) => ({ s, i }))
+        .filter(({ s }) => s.type !== "end_card")
+      const slot = options.presenter.slot === "cta" ? nonEnd[nonEnd.length - 1] : nonEnd[0]
+      const vo = slot ? voResults[slot.i] : null
+      const voText = slot && slot.s.type !== "end_card" ? slot.s.vo_text : null
+      if (slot && vo && voText) {
+        try {
+          rlog("phase2b presenter start")
+          const clip = await generatePresenterClip({
+            adId,
+            characterId: options.presenter.characterId,
+            styleImageUrl: options.presenter.styleImageUrl,
+            voText,
+            voAudioUrl: vo.audioUrl,
+            replicateToken: options.presenter.replicateToken,
+            cached: options.presenter.cached,
+          })
+          presenterClipPath = join(workDir, "presenter.mp4")
+          const res = await fetch(clip.clipUrl)
+          await fs.writeFile(presenterClipPath, Buffer.from(await res.arrayBuffer()))
+          presenterSceneIndex = slot.i
+          presenterOutcome = { used: true, clipUrl: clip.clipUrl, keyframeUrl: clip.keyframeUrl, lineHash: clip.lineHash }
+          rlog("phase2b presenter done")
+        } catch (e) {
+          presenterOutcome = { used: false, fallbackReason: (e as Error)?.message?.slice(0, 200) }
+          presenterClipPath = null
+          presenterSceneIndex = -1
+          rlog(`phase2b presenter FELL BACK: ${presenterOutcome.fallbackReason}`)
+        }
+      } else {
+        presenterOutcome = { used: false, fallbackReason: "no narration line for the presenter slot" }
+      }
+    }
 
     // ── 3. Render each scene video ──────────────────────────────────────────
     rlog("phase3 scene renders start")
@@ -109,7 +210,7 @@ export async function renderAd(
         sourceImagePath = path
       }
 
-      await renderScene({
+      const sceneInput = {
         scene,
         sourceImagePath,
         durationSec,
@@ -120,7 +221,15 @@ export async function renderAd(
         captionFontPath: assets.captionFontPath,
         paletteBgHex: paletteBg,
         textPosition: script.style.text_position,
-      })
+        captionText: captionsEnabled && scene.type !== "end_card" ? scene.vo_text ?? null : null,
+        contactStripText: scene.type !== "end_card" ? contactStripText : null,
+        qrPngPath: scene.type === "end_card" ? qrPngPath : null,
+      }
+      if (i === presenterSceneIndex && presenterClipPath) {
+        await renderPresenterScene({ ...sceneInput, clipPath: presenterClipPath })
+      } else {
+        await renderScene(sceneInput)
+      }
       sceneVideos.push(outPath)
       console.log(`[renderAd] ${adId}  scene${i} render took=${((Date.now() - sceneStart) / 1000).toFixed(1)}s`)
     }
@@ -147,9 +256,15 @@ export async function renderAd(
 
     // ── 6. Audio: TTS + music + duck + loudnorm ─────────────────────────────
     const totalVideoSec = totalScenesSec + WATERMARK_OUTRO_SEC
-    const voClips = voResults.map((r, i) =>
-      r ? { audioPath: r.audioPath, startOffsetSec: sceneOffsets(sceneDurations)[i] } : null,
-    )
+    const voClips = voResults.map((r, i) => {
+      if (!r) return null
+      let offset = sceneOffsets(sceneDurations)[i]
+      // The presenter's mouth starts at the exact scene boundary — the global
+      // 0.2s lead-in would make the audio lag the lips by 200ms (over the
+      // ~125ms AV-sync tolerance). Align that one clip to the boundary.
+      if (i === presenterSceneIndex) offset = Math.max(0, offset - 0.2)
+      return { audioPath: r.audioPath, startOffsetSec: offset }
+    })
     // Resolve music: prefer blob URL from manifest.json, fall back to /public
     // local path. resolveMusicSource returns either an http(s) URL (fine for
     // ffmpeg to open directly) or an absolute local path. Missing → null.
@@ -199,6 +314,7 @@ export async function renderAd(
       finalVideoUrl,
       durationSec: totalVideoSec,
       totalSceneDurations: sceneDurations,
+      presenter: presenterOutcome,
     }
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {})

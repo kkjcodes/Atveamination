@@ -119,3 +119,37 @@ export function overlayTextForScene(scene: AdScript["scenes"][number]): string |
   if (scene.type === "end_card") return null
   return scene.text || null
 }
+
+// Burned-in narration subtitle: small boxed line pinned to the bottom of the
+// frame (Reels norm — most viewers watch muted). `bottomReserved` lifts the
+// caption above anything already occupying the bottom of the frame (the
+// bold_promo band). Distinct from the headline overlay: headline is the short
+// punch line, caption is the spoken sentence.
+export function captionFragment(
+  text: string,
+  outWidth: number,
+  outHeight: number,
+  fontPath: string | null,
+  bottomReserved: number = 0,
+): string {
+  const escaped = escapeDrawtext(text)
+  const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
+  const size = fitFontSize(text, outWidth, Math.round(outHeight * 0.032))
+  const margin = Math.round(outHeight * 0.02)
+  const y = outHeight - bottomReserved - margin - size
+  return `drawtext=text='${escaped}':${font}:fontsize=${size}:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=${y}:box=1:boxcolor=0x00000080:boxborderw=12`
+}
+
+// Small persistent contact chip pinned near the top of every scene (opt-in).
+export function contactStripFragment(
+  text: string,
+  outWidth: number,
+  outHeight: number,
+  fontPath: string | null,
+): string {
+  const escaped = escapeDrawtext(text)
+  const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
+  const size = fitFontSize(text, outWidth, Math.round(outHeight * 0.026))
+  const y = Math.round(outHeight * 0.035)
+  return `drawtext=text='${escaped}':${font}:fontsize=${size}:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=${y}:box=1:boxcolor=0x00000066:boxborderw=10`
+}

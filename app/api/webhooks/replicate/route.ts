@@ -7,7 +7,7 @@ import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
 import { describeFirstFrame } from "@/lib/ai/describe"
 import { inferSpeakerCharacterId } from "@/lib/scene-routing"
 import { verifyReplicateSignature } from "@/lib/webhooks/verify"
-import { chunkPlanForDuration } from "@/lib/video/chunk-plan"
+import { chunkPlanForScene } from "@/lib/video/chunk-plan"
 
 async function toDataUri(url: string): Promise<string> {
   const res = await fetch(url)
@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
       // Chunk plan: 6s → 1 chunk; 10s → 2; 15s → 3. First chunk uses the
       // keyframe; subsequent chunks are chained via last-frame extraction in
       // the fal webhook.
-      const plan = chunkPlanForDuration(imageScene.durationSeconds)
+      const plan = chunkPlanForScene(imageScene.durationSeconds, imageScene.voiceScript?.trim() || imageScene.description)
       const firstChunkFrames = plan.framesPerChunk[0]
 
       const falSubmit = await fal.queue.submit(FAL_MODELS.wan, {

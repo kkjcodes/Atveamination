@@ -27,6 +27,8 @@ type InitialBusiness = {
   oneLiner: string
   address: string | null
   notes: string | null
+  phone: string | null
+  website: string | null
   logoAssetId: string | null
 } | null
 
@@ -49,6 +51,8 @@ export default function BusinessOnboarding({
   const [oneLiner, setOneLiner] = useState(initialBusiness?.oneLiner ?? "")
   const [address, setAddress] = useState(initialBusiness?.address ?? "")
   const [notes, setNotes] = useState(initialBusiness?.notes ?? "")
+  const [phone, setPhone] = useState(initialBusiness?.phone ?? "")
+  const [website, setWebsite] = useState(initialBusiness?.website ?? "")
   const [photos, setPhotos] = useState<Photo[]>(initialPhotos)
   const [logoUrl, setLogoUrl] = useState<string | null>(initialLogoUrl)
 
@@ -113,7 +117,7 @@ export default function BusinessOnboarding({
 
   // Debounced text-field auto-save.
   useEffect(() => {
-    if (!initialBusiness && name.length === 0 && oneLiner.length === 0 && address.length === 0 && notes.length === 0) {
+    if (!initialBusiness && name.length === 0 && oneLiner.length === 0 && address.length === 0 && notes.length === 0 && phone.length === 0 && website.length === 0) {
       // Don't fire on the empty initial render.
       return
     }
@@ -124,11 +128,11 @@ export default function BusinessOnboarding({
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSaveState("saving")
     debounceTimer.current = setTimeout(() => {
-      persist({ name, oneLiner, address: address || null, notes: notes || null })
+      persist({ name, oneLiner, address: address || null, notes: notes || null, phone: phone || null, website: website || null })
     }, 500)
     return () => { if (debounceTimer.current) clearTimeout(debounceTimer.current) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [name, oneLiner, address, notes])
+  }, [name, oneLiner, address, notes, phone, website])
 
   async function handlePhotos(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -275,6 +279,22 @@ export default function BusinessOnboarding({
             onChange={(e) => setAddress(e.target.value)}
             placeholder="123 Example Street"
           />
+        </div>
+
+        {/* Contact */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="phone" className="text-sm font-medium text-zinc-700 mb-1.5 block">
+              Phone <span className="text-xs font-normal text-zinc-400">optional — shown on your ads</span>
+            </Label>
+            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="555-013-0142" />
+          </div>
+          <div>
+            <Label htmlFor="website" className="text-sm font-medium text-zinc-700 mb-1.5 block">
+              Website <span className="text-xs font-normal text-zinc-400">optional</span>
+            </Label>
+            <Input id="website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="yourbusiness.com" />
+          </div>
         </div>
 
         {/* Notes */}

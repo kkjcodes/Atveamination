@@ -71,6 +71,17 @@ function recognizeCommonHttpShape(e: unknown): UserFacingError | null {
       retryable: true,
     }
   }
+  if (lower.includes("voice service is taking too long")) {
+    // Thrown by the business TTS 150s guard when fal's Kokoro queue is
+    // congested — surface the specific cause instead of the generic copy.
+    return {
+      code: "provider_timeout",
+      message: "The voice service is busy right now, so we stopped the render instead of keeping you waiting.",
+      savedState: "Your ad script is saved.",
+      nextAction: "Try again in a few minutes.",
+      retryable: true,
+    }
+  }
   if (lower.includes("timeout") || lower.includes("timed out") || lower.includes("etimedout")) {
     return {
       code: "provider_timeout",

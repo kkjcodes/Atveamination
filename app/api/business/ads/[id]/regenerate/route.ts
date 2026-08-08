@@ -7,6 +7,7 @@ import {
   makeAdScriptInput,
 } from "@/lib/business/adscript"
 import { musicForFamily } from "@/lib/business/music-catalog"
+import { occasionById } from "@/lib/business/occasions"
 import type { AdScript, TemplateFamily, AspectRatio, Voice } from "@/lib/business/adscript-schema"
 import { emit } from "@/lib/events"
 import { killSwitchEngaged } from "@/lib/limits"
@@ -44,7 +45,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
       kind: "product_photo",
       blobPath: { startsWith: `business/${ad.business.id}/photos/` },
     },
-    orderBy: { createdAt: "asc" },
+    orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }],
   })
   if (photos.length === 0) {
     return NextResponse.json({ error: "Add at least one product photo first" }, { status: 400 })
@@ -71,6 +72,11 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     ad.templateFamily as TemplateFamily,
     ad.aspectRatio as AspectRatio,
     availableMusic,
+    {
+      occasionBrief: occasionById(ad.occasion)?.brief || null,
+      phone: ad.business.phone,
+      website: ad.business.website,
+    },
   )
 
   const result = await generateAdScript(input)

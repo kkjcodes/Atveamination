@@ -9,7 +9,7 @@ import { sanitizeVideoPrompt } from "@/lib/ai/moderation"
 import { describeFirstFrame } from "@/lib/ai/describe"
 import { inferSpeakerCharacterId } from "@/lib/scene-routing"
 import { logError } from "@/lib/logger"
-import { chunkPlanForDuration } from "@/lib/video/chunk-plan"
+import { chunkPlanForScene } from "@/lib/video/chunk-plan"
 import { extractLastFrame } from "@/lib/video/extract-last-frame"
 import { finalizeChunks as finalizeChunksLocal } from "@/lib/video/finalize-chunks"
 
@@ -206,7 +206,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         // First chunk uses the keyframe as image_url. Subsequent chunks are
         // seeded by the previous chunk's last frame (see the fal webhook and
         // the polling video-completion branch below).
-        const plan = chunkPlanForDuration(scene.durationSeconds)
+        const plan = chunkPlanForScene(scene.durationSeconds, scene.voiceScript?.trim() || scene.description)
         const firstChunkFrames = plan.framesPerChunk[0]
 
         const [falSubmit, imageUrl] = await Promise.all([
@@ -356,7 +356,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
           if (hasMoreChunks) {
             // Submit next chunk seeded by this chunk's last frame; keep phase=video.
-            const plan = chunkPlanForDuration(scene.durationSeconds)
+            const plan = chunkPlanForScene(scene.durationSeconds, scene.voiceScript?.trim() || scene.description)
             const framesNext = plan.framesPerChunk[chunkIndex + 1]
             const cachedPrompt = scene.videoPrompt
             if (!cachedPrompt) {
@@ -406,7 +406,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
               : await finalizeChunksLocal(
                   id,
                   updatedChunkUrls,
-                  chunkPlanForDuration(scene.durationSeconds).targetSeconds,
+                  chunkPlanForScene(scene.durationSeconds, scene.voiceScript?.trim() || scene.description).targetSeconds,
                 )
             await prisma.scene.update({
               where: { id },

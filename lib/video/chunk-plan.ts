@@ -36,3 +36,26 @@ export function chunkPlanForDuration(durationSeconds: number | null | undefined)
   chunks.push(framesFor(remaining))
   return { framesPerChunk: chunks, targetSeconds: target }
 }
+
+// Audio-aware plan: generate only the frames the narration needs. The concat
+// trims every clip to audioDur + 0.5s anyway, so frames past that point were
+// paid for (82-100 frames bill at 1.25×) and thrown away. Conservative 2.2
+// words/sec (the hi/es Kokoro rate — slower than English) so we never come up
+// short; only ever SHORTENS the target — long narration is speed-capped and
+// faded to the scene target elsewhere, never extended here.
+//
+// Every call site (submit, chunk chaining, trim targets) must use the same
+// function with the same inputs or chunk indexing breaks mid-scene.
+const SPEECH_WPS_CONSERVATIVE = 2.2
+const AUDIO_PAD_SEC = 0.5
+
+export function chunkPlanForScene(
+  durationSeconds: number | null | undefined,
+  ttsText: string | null | undefined,
+): ChunkPlan {
+  const target = typeof durationSeconds === "number" && durationSeconds > 0 ? durationSeconds : 6
+  const words = (ttsText ?? "").trim().split(/\s+/).filter(Boolean).length
+  if (words === 0) return chunkPlanForDuration(target)
+  const estimated = words / SPEECH_WPS_CONSERVATIVE + AUDIO_PAD_SEC
+  return chunkPlanForDuration(Math.min(target, estimated))
+}
