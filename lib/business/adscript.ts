@@ -29,9 +29,7 @@ export {
   makeAdScriptInput,
   coerceAspectRatio,
   coerceTemplateFamily,
-  enforcePhotoOrder,
 } from "@/lib/business/adscript-input"
-import { enforcePhotoOrder } from "@/lib/business/adscript-input"
 export type {
   MusicOption,
   AdScriptInput,
@@ -50,10 +48,10 @@ const EXAMPLE_SCRIPT = `{
   "audio": { "voice": "warm_f", "music_id": "chill_modern_peaceful_01", "music_level": "normal" },
   "style": { "palette_hint": "warm", "text_position": "lower_third" },
   "scenes": [
-    { "type": "hook",    "text": "New in the neighborhood.",           "vo_text": "Something new just opened on Elm Street.",         "asset_id": "PHOTO_ID_1", "min_seconds": 3, "motion": "slow_zoom_in" },
+    { "type": "hook",    "text": "New in the neighborhood.",           "vo_text": "Something new just opened in the neighborhood.",         "asset_id": "PHOTO_ID_1", "min_seconds": 3, "motion": "slow_zoom_in" },
     { "type": "benefit", "text": "Fresh pastries every morning.",       "vo_text": "Fresh pastries baked every morning right on site.", "asset_id": "PHOTO_ID_2", "min_seconds": 4, "motion": "pan_right" },
     { "type": "cta",     "text": "Come say hi this Saturday.",          "vo_text": "Come by this Saturday and say hello.",              "asset_id": "PHOTO_ID_3", "min_seconds": 3, "motion": "hold" },
-    { "type": "end_card", "lines": ["Rosie's Bakery", "12 Elm Street", "Open 7am daily"], "min_seconds": 3 }
+    { "type": "end_card", "lines": ["Rosie's Bakery", "123 Example Street", "Open 7am daily"], "min_seconds": 3 }
   ]
 }`
 
@@ -89,12 +87,12 @@ EXAMPLE of the exact JSON shape you must return (field names are literal — cop
 ${EXAMPLE_SCRIPT}
 
 Rules (STRICT — validation will reject violations):
-- 3 to 7 scenes total.
+- Create EXACTLY one scene per photo listed above, plus one end_card. Use every photo exactly once — do not skip or repeat any.
 - Scene types: ${SCENE_TYPES.join(" | ")}. Exactly one end_card, and it MUST be the last scene.
 - Field names on hook/benefit/cta scenes: type, text, vo_text, asset_id, min_seconds, motion (and optional pronunciation_hint). Use "text" — NOT "overlay_text", "heading", "title", or any other name.
 - Field names on end_card: type, lines, min_seconds (and optional logo_asset_id, vo_text). Use "lines" as a JSON array of strings — NOT "text_lines" or a single string.
 - Every non-end_card scene needs a valid asset_id from the list above.
-- Photos are listed in the user's chosen order. Scenes MUST use them in that same order — a scene's photo must never appear earlier in the list than a previous scene's photo. You may skip photos; never reorder them.
+- Photos are listed in the user's chosen order. Scene 1 uses photo 1, scene 2 uses photo 2, and so on. The narration and on-screen text of each scene MUST describe what is actually in that scene's photo.
 - Word caps for the "text" field: hook ≤ 8 words, benefit ≤ 12 words, cta ≤ 8 words.
 - End-card lines: ≤ 40 chars each, at least one line. If a Phone or Website is provided above, include each on its own end-card line.
 - vo_text: required on every non-end_card scene, ≤ 30 words. Natural spoken sentence, not a copy of the overlay text.
@@ -149,6 +147,7 @@ export type AdScriptResult =
 export async function generateAdScript(input: AdScriptInput): Promise<AdScriptResult> {
   const ctx: ValidateContext = {
     validAssetIds: new Set(input.photos.map((p) => p.assetId)),
+    orderedAssetIds: input.photos.map((p) => p.assetId),
     validLogoAssetId: input.logoAssetId,
   }
 
@@ -159,11 +158,8 @@ export async function generateAdScript(input: AdScriptInput): Promise<AdScriptRe
   } catch (e) {
     return { ok: false, errors: [{ path: "$", message: `initial call failed: ${(e as Error)?.message}` }], lastAttempt: null }
   }
-  const orderedAssetIds = input.photos.map((p) => p.assetId)
   let errors = validateAdScript(attempt, ctx)
-  if (errors.length === 0) {
-    return { ok: true, script: enforcePhotoOrder(attempt as AdScript, orderedAssetIds), repairUsed: false }
-  }
+  if (errors.length === 0) return { ok: true, script: attempt as AdScript, repairUsed: false }
 
   // Attempt 2 (repair)
   try {
@@ -172,9 +168,7 @@ export async function generateAdScript(input: AdScriptInput): Promise<AdScriptRe
     return { ok: false, errors: [{ path: "$", message: `repair call failed: ${(e as Error)?.message}` }], lastAttempt: attempt }
   }
   errors = validateAdScript(attempt, ctx)
-  if (errors.length === 0) {
-    return { ok: true, script: enforcePhotoOrder(attempt as AdScript, orderedAssetIds), repairUsed: true }
-  }
+  if (errors.length === 0) return { ok: true, script: attempt as AdScript, repairUsed: true }
 
   return { ok: false, errors, lastAttempt: attempt }
 }

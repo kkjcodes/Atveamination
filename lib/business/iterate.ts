@@ -44,10 +44,10 @@ const EXAMPLE_SCRIPT = `{
   "audio": { "voice": "warm_f", "music_id": "chill_modern_peaceful_01", "music_level": "normal" },
   "style": { "palette_hint": "warm", "text_position": "lower_third" },
   "scenes": [
-    { "type": "hook",    "text": "New in the neighborhood.",           "vo_text": "Something new just opened on Elm Street.",         "asset_id": "PHOTO_ID_1", "min_seconds": 3, "motion": "slow_zoom_in" },
+    { "type": "hook",    "text": "New in the neighborhood.",           "vo_text": "Something new just opened in the neighborhood.",         "asset_id": "PHOTO_ID_1", "min_seconds": 3, "motion": "slow_zoom_in" },
     { "type": "benefit", "text": "Fresh pastries every morning.",       "vo_text": "Fresh pastries baked every morning right on site.", "asset_id": "PHOTO_ID_2", "min_seconds": 4, "motion": "pan_right" },
     { "type": "cta",     "text": "Come say hi this Saturday.",          "vo_text": "Come by this Saturday and say hello.",              "asset_id": "PHOTO_ID_3", "min_seconds": 3, "motion": "hold" },
-    { "type": "end_card", "lines": ["Rosie's Bakery", "12 Elm Street", "Open 7am daily"], "min_seconds": 3 }
+    { "type": "end_card", "lines": ["Rosie's Bakery", "123 Example Street", "Open 7am daily"], "min_seconds": 3 }
   ]
 }`
 

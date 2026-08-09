@@ -13,6 +13,7 @@ import {
   fitFontSize,
   captionFragment,
   contactStripFragment,
+  splitCaption,
 } from "@/lib/business/render/text-overlay"
 
 // Per-scene renderer. Given a scene, its source image (or logo), the target
@@ -95,10 +96,14 @@ async function renderCleanModern(input: SceneRenderInput): Promise<void> {
     return
   }
 
+  // ONE text element on screen (user-reported UX: headline + caption at once
+  // reads as two competing messages). Captions on → the narration caption
+  // carries the words; captions off → the short headline.
   const text = overlayTextForScene(scene)
   const extras = [
-    text ? drawtextFragment(text, textPosition, width, height, captionFontPath) : null,
-    input.captionText ? captionFragment(input.captionText, width, height, captionFontPath) : null,
+    input.captionText
+      ? captionFragment(input.captionText, width, height, captionFontPath)
+      : text ? drawtextFragment(text, textPosition, width, height, captionFontPath) : null,
     input.contactStripText ? contactStripFragment(input.contactStripText, width, height, captionFontPath) : null,
   ].filter(Boolean)
   const filter = [motionFilter, ...extras, "format=yuv420p"].join(",")
@@ -140,24 +145,26 @@ async function renderBoldPromo(input: SceneRenderInput): Promise<void> {
     return
   }
 
-  const text = overlayTextForScene(scene) ?? ""
-  // Drawbox behind the text.
+  // ONE text in the band: the narration caption when captions are on (split
+  // to two lines, smaller face), else the short headline. Never both a band
+  // headline AND a bottom caption (user-reported double-text UX).
+  const displayText = input.captionText || overlayTextForScene(scene) || ""
   const band = `drawbox=x=0:y=${bandY}:w=${width}:h=${bandH}:color=${paletteBgHex}@0.85:t=fill`
   const font = captionFontPath ? `fontfile='${captionFontPath}'` : `font='sans'`
-  // fitFontSize prevents long benefit lines (up to 12 words) from clipping
-  // off the frame edges — the naive height * 0.08 was ~154px on 9:16, wider
-  // than the 1080 frame for anything past ~14 chars.
-  const fontSize = fitFontSize(text, width, Math.round(height * 0.08))
-  const textY = bandY + Math.round(bandH / 2 - fontSize / 2)
-  const drawtext = `drawtext=text='${escapeDrawtext(text)}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${textY}:borderw=3:bordercolor=0x00000080`
+  const lines = input.captionText ? splitCaption(displayText) : [displayText]
+  const maxLineSize = Math.round(height * (input.captionText ? 0.042 : 0.08))
+  const fontSize = Math.min(...lines.map((l) => fitFontSize(l, width, maxLineSize)))
+  const lineGap = Math.round(fontSize * 0.4)
+  const blockH = lines.length * fontSize + (lines.length - 1) * lineGap
+  const startY = bandY + Math.round((bandH - blockH) / 2)
+  const drawtexts = lines.map((line, i) => {
+    const y = startY + i * (fontSize + lineGap)
+    return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${y}:borderw=3:bordercolor=0x00000080`
+  })
   const extras = [
-    // Caption sits above the band (band bottom margin + band height).
-    input.captionText
-      ? captionFragment(input.captionText, width, height, captionFontPath, height - bandY)
-      : null,
     input.contactStripText ? contactStripFragment(input.contactStripText, width, height, captionFontPath) : null,
   ].filter(Boolean)
-  const filter = [motionFilter, band, drawtext, ...extras, "format=yuv420p"].join(",")
+  const filter = [motionFilter, band, ...drawtexts, ...extras, "format=yuv420p"].join(",")
 
   await runFfmpeg([
     "-y", "-v", "error",
@@ -246,18 +253,26 @@ export async function renderPresenterScene(
 
   const text = overlayTextForScene(scene)
   const overlays: string[] = []
-  if (input.templateFamily === "bold_promo" && text) {
+  if (input.templateFamily === "bold_promo" && (input.captionText || text)) {
     const bandH = Math.round(height * 0.28)
     const bandY = height - bandH - Math.round(height * 0.05)
     const font = captionFontPath ? `fontfile='${captionFontPath}'` : `font='sans'`
-    const fontSize = fitFontSize(text, width, Math.round(height * 0.08))
-    const textY = bandY + Math.round(bandH / 2 - fontSize / 2)
+    const displayText = input.captionText || text || ""
+    const lines = input.captionText ? splitCaption(displayText) : [displayText]
+    const maxLineSize = Math.round(height * (input.captionText ? 0.042 : 0.08))
+    const fontSize = Math.min(...lines.map((l) => fitFontSize(l, width, maxLineSize)))
+    const lineGap = Math.round(fontSize * 0.4)
+    const blockH = lines.length * fontSize + (lines.length - 1) * lineGap
+    const startY = bandY + Math.round((bandH - blockH) / 2)
     overlays.push(`drawbox=x=0:y=${bandY}:w=${width}:h=${bandH}:color=${paletteBgHex}@0.85:t=fill`)
-    overlays.push(`drawtext=text='${escapeDrawtext(text)}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${textY}:borderw=3:bordercolor=0x00000080`)
-    if (input.captionText) overlays.push(captionFragment(input.captionText, width, height, captionFontPath, height - bandY))
-  } else {
-    if (text) overlays.push(drawtextFragment(text, textPosition, width, height, captionFontPath))
-    if (input.captionText) overlays.push(captionFragment(input.captionText, width, height, captionFontPath))
+    for (let i = 0; i < lines.length; i++) {
+      const y = startY + i * (fontSize + lineGap)
+      overlays.push(`drawtext=text='${escapeDrawtext(lines[i])}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${y}:borderw=3:bordercolor=0x00000080`)
+    }
+  } else if (input.captionText) {
+    overlays.push(captionFragment(input.captionText, width, height, captionFontPath))
+  } else if (text) {
+    overlays.push(drawtextFragment(text, textPosition, width, height, captionFontPath))
   }
   if (input.contactStripText) overlays.push(contactStripFragment(input.contactStripText, width, height, captionFontPath))
 

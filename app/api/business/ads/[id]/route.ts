@@ -48,11 +48,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   })
   if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 })
 
-  const body = await req.json().catch(() => ({})) as { galleryOptIn?: boolean }
+  const body = await req.json().catch(() => ({})) as { galleryOptIn?: boolean; captionsEnabled?: boolean }
   await prisma.ad.update({
     where: { id },
     data: {
       ...(typeof body.galleryOptIn === "boolean" && { galleryOptIn: body.galleryOptIn }),
+      ...(typeof body.captionsEnabled === "boolean" && { captionsEnabled: body.captionsEnabled }),
     },
   })
   if (typeof body.galleryOptIn === "boolean") {

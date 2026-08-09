@@ -21,11 +21,13 @@ export default function BusinessMarketing() {
               For your business
             </p>
             <h1 className="text-4xl sm:text-5xl font-black tracking-tight leading-tight text-zinc-900">
-              Turn photos of your work into a ready-to-post video ad.
+              Your cartoon self presents your business ad.
             </h1>
             <p className="mt-5 text-lg text-zinc-600 max-w-lg">
-              Upload a few photos. We write the script, add voice and music, and
-              render a video sized for social media. No filming or editing.
+              Upload a few photos and a selfie. We write the script, and your
+              own cartoon character delivers it — voice, music, and captions,
+              sized for social media. No filming, no editing, no actors.
+              Only on AtVeAnimation.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link

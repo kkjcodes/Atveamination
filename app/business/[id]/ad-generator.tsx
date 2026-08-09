@@ -680,14 +680,14 @@ export default function BusinessAdGenerator({
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              placeholder="Phone — 555-013-0142"
+              placeholder="Phone — (555) 013-0142"
               className="rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none"
             />
             <input
               type="url"
               value={website}
               onChange={(e) => setWebsite(e.target.value)}
-              placeholder="Website — yourbusiness.com"
+              placeholder="Website — example.com"
               className="rounded-lg border border-zinc-200 px-3 py-2 text-sm focus:border-amber-400 focus:outline-none"
             />
           </div>

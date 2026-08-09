@@ -125,6 +125,23 @@ export function overlayTextForScene(scene: AdScript["scenes"][number]): string |
 // caption above anything already occupying the bottom of the frame (the
 // bold_promo band). Distinct from the headline overlay: headline is the short
 // punch line, caption is the spoken sentence.
+// Split a long caption into up to two balanced lines at a word boundary.
+// Long narration sentences (~20+ words) hit fitFontSize's 24px floor as a
+// single line and overflow the frame edges (seen on the Ridgeview demo).
+export function splitCaption(text: string): string[] {
+  const words = text.trim().split(/\s+/)
+  if (words.length < 2 || text.length <= 48) return [text.trim()]
+  let best = 1
+  let bestDiff = Infinity
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(" ").length
+    const b = words.slice(i).join(" ").length
+    const diff = Math.abs(a - b)
+    if (diff < bestDiff) { bestDiff = diff; best = i }
+  }
+  return [words.slice(0, best).join(" "), words.slice(best).join(" ")]
+}
+
 export function captionFragment(
   text: string,
   outWidth: number,
@@ -132,12 +149,19 @@ export function captionFragment(
   fontPath: string | null,
   bottomReserved: number = 0,
 ): string {
-  const escaped = escapeDrawtext(text)
   const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
-  const size = fitFontSize(text, outWidth, Math.round(outHeight * 0.032))
+  const lines = splitCaption(text)
+  const size = Math.min(...lines.map((l) => fitFontSize(l, outWidth, Math.round(outHeight * 0.032))))
   const margin = Math.round(outHeight * 0.02)
-  const y = outHeight - bottomReserved - margin - size
-  return `drawtext=text='${escaped}':${font}:fontsize=${size}:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=${y}:box=1:boxcolor=0x00000080:boxborderw=12`
+  const lineGap = Math.round(size * 0.45)
+  // Stack from the bottom up.
+  return lines
+    .map((line, i) => {
+      const fromBottom = (lines.length - 1 - i) * (size + lineGap)
+      const y = outHeight - bottomReserved - margin - size - fromBottom
+      return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${size}:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=${y}:box=1:boxcolor=0x00000080:boxborderw=12`
+    })
+    .join(",")
 }
 
 // Small persistent contact chip pinned near the top of every scene (opt-in).

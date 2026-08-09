@@ -61,7 +61,10 @@ const CHAR_CAP_END_CARD_LINE = 40
 const VO_WORD_CAP = 30
 
 const SCENE_MIN = 3
-const SCENE_MAX = 7
+// 9 = 8 photos (the per-ad picker cap) + the end card. Every selected photo
+// gets exactly one scene; the 10-35s derived-duration cap remains the real
+// upper bound on ad length.
+const SCENE_MAX = 9
 const TOTAL_MIN_SEC = 10
 const TOTAL_MAX_SEC = 35
 
@@ -74,6 +77,12 @@ export type ValidationError = { path: string; message: string }
 export type ValidateContext = {
   // asset_id → true if the asset exists and belongs to the business
   validAssetIds: Set<string>
+  // The user's chosen photo order. When provided, every id must be used by
+  // exactly one scene, in this order. Violations are validation errors so the
+  // repair pass fixes them WITH matching narration — a post-hoc reshuffle of
+  // asset ids desyncs vo_text from the photo it describes (user-reported:
+  // "voice doesn't match the picture").
+  orderedAssetIds?: string[]
   // logo asset id (or null) — used to sanity-check end_card.logo_asset_id
   validLogoAssetId: string | null
   // Kokoro TTS runs ~2.5 wps English. voDurationEstimator returns seconds
@@ -214,6 +223,37 @@ export function validateAdScript(
 
   if (endCardCount !== 1) {
     errors.push({ path: "scenes", message: `must have exactly one end_card (found ${endCardCount})` })
+  }
+
+  // Photo completeness + order: the user hand-picked and ordered these photos
+  // in the picker, so every one must appear in exactly one scene, in order.
+  // Enforced here (not post-hoc reassignment) so the repair pass regenerates
+  // scenes with narration that MATCHES each photo.
+  if (ctx.orderedAssetIds && ctx.orderedAssetIds.length > 0) {
+    const used = scenes
+      .filter((s) => s.type !== "end_card" && typeof (s as { asset_id?: unknown }).asset_id === "string")
+      .map((s) => (s as { asset_id: string }).asset_id)
+    const expected = ctx.orderedAssetIds
+    const missing = expected.filter((id) => !used.includes(id))
+    if (missing.length > 0) {
+      errors.push({
+        path: "scenes",
+        message: `every uploaded photo must be used in exactly one scene — missing asset_id(s): ${missing.join(", ")}`,
+      })
+    }
+    const dupes = used.filter((id, i) => used.indexOf(id) !== i)
+    if (dupes.length > 0) {
+      errors.push({ path: "scenes", message: `each photo may be used only once — duplicated: ${[...new Set(dupes)].join(", ")}` })
+    }
+    if (missing.length === 0 && dupes.length === 0) {
+      const inExpectedOrder = used.every((id, i) => expected[i] === id)
+      if (!inExpectedOrder) {
+        errors.push({
+          path: "scenes",
+          message: `photos must appear in the user's chosen order: ${expected.join(", ")}`,
+        })
+      }
+    }
   }
 
   if (totalDerived < TOTAL_MIN_SEC || totalDerived > TOTAL_MAX_SEC) {

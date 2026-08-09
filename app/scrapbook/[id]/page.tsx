@@ -6,7 +6,7 @@ import Nav from "@/components/nav"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import ExpandableImage from "@/components/expandable-image"
-import { STYLE_PRESETS, type ScrapbookStyle, COST_ESTIMATES } from "@/lib/scrapbook/config"
+import { STYLE_PRESETS, type ScrapbookStyle } from "@/lib/scrapbook/config"
 import { AsyncWorkStatus } from "@/components/async-work-status"
 import { GenerationLoader } from "@/components/generation-loader"
 import { ASYNC_WORK_COPY, PRODUCT_TERMS } from "@/lib/copy"
@@ -231,7 +231,6 @@ export default function ScrapbookDetailPage({ params }: { params: Promise<{ id: 
             <h1 className="text-2xl font-bold text-zinc-900">{project.title}</h1>
             <p className="text-sm text-zinc-500 mt-0.5">
               {styleInfo.label} · {project.pages.length} {project.pages.length === 1 ? "page" : "pages"}
-              {project.totalCostUsd > 0 && ` · $${project.totalCostUsd.toFixed(2)}`}
             </p>
           </div>
           <Button asChild variant="ghost" size="sm">
@@ -328,11 +327,6 @@ export default function ScrapbookDetailPage({ params }: { params: Promise<{ id: 
           const phase = phaseLabel(page.generationPhase)
           const isBusy = busyPage === page.id || (page.generationPhase && !["done", "failed", null].includes(page.generationPhase))
           const routeText = routeLabel(page.route)
-          const estCost = page.route === "dynamic"
-            ? COST_ESTIMATES.perPageDynamic
-            : page.route === "subtle"
-              ? COST_ESTIMATES.perPageSubtle
-              : COST_ESTIMATES.perPageFallback
           return (
             <Card key={page.id}>
               <CardContent className="p-4">
@@ -419,10 +413,7 @@ export default function ScrapbookDetailPage({ params }: { params: Promise<{ id: 
                   </div>
                 )}
 
-                <div className="mt-3 flex items-center justify-between">
-                  <p className="text-xs text-zinc-400">
-                    {page.costUsd > 0 ? `$${page.costUsd.toFixed(2)}` : `~$${estCost.toFixed(2)}`}
-                  </p>
+                <div className="mt-3 flex items-center justify-end">
                   {page.generationPhase !== "done" && (
                     <Button
                       size="sm"

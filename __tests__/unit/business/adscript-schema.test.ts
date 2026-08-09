@@ -16,7 +16,7 @@ const OK: unknown = {
   scenes: [
     { type: "hook",    text: "Fresh bread every morning at six.", vo_text: "Every morning at six the ovens are already full and the smell fills the shop.", asset_id: "asset-1", min_seconds: 3, motion: "slow_zoom_in" },
     { type: "benefit", text: "Made from scratch, always.", vo_text: "Sourdough kneaded by hand — no shortcuts, just craft.", asset_id: "asset-2", min_seconds: 3, motion: "pan_left" },
-    { type: "cta",     text: "Come taste the difference.", vo_text: "We're on Maple Street, come try one warm.", asset_id: "asset-3", min_seconds: 3, motion: "hold" },
+    { type: "cta",     text: "Come taste the difference.", vo_text: "We're on Example Street, come try one warm.", asset_id: "asset-3", min_seconds: 3, motion: "hold" },
     { type: "end_card", logo_asset_id: "logo-1", vo_text: "", lines: ["Rosie's Bakery", "123 Example Street", "Open Tue–Sun 6am–2pm"], min_seconds: 3 },
   ],
 }
@@ -56,17 +56,17 @@ describe("validateAdScript", () => {
     const bad = JSON.parse(JSON.stringify(OK))
     bad.scenes = bad.scenes.slice(0, 2)
     const errors = validateAdScript(bad, CTX)
-    expect(errors.some((e) => e.message.includes("3–7"))).toBe(true)
+    expect(errors.some((e) => e.message.includes("3–9"))).toBe(true)
   })
 
-  it("rejects scenes above the max (7)", () => {
+  it("rejects scenes above the max (9 = 8 photos + end card)", () => {
     const bad = JSON.parse(JSON.stringify(OK))
-    // Insert 5 extra benefit scenes → 8 total
-    for (let i = 0; i < 5; i++) {
+    // Insert 7 extra benefit scenes → 10 total
+    for (let i = 0; i < 7; i++) {
       bad.scenes.splice(1, 0, { type: "benefit", text: "Fresh.", vo_text: "Good stuff.", asset_id: "asset-1", min_seconds: 3, motion: "hold" })
     }
     const errors = validateAdScript(bad, CTX)
-    expect(errors.some((e) => e.message.includes("3–7"))).toBe(true)
+    expect(errors.some((e) => e.message.includes("3–9"))).toBe(true)
   })
 
   it("rejects hook overlay > 8 words", () => {
@@ -148,5 +148,45 @@ describe("validateAdScript", () => {
     bad.scenes[2].vo_text = Array(30).fill("word").join(" ")
     const errors = validateAdScript(bad, CTX)
     expect(errors.some((e) => e.message.includes("derived total duration"))).toBe(true)
+  })
+})
+
+describe("photo completeness and order (orderedAssetIds)", () => {
+  const CTX_ORDERED: ValidateContext = {
+    ...CTX,
+    orderedAssetIds: ["asset-1", "asset-2", "asset-3"],
+  }
+
+  it("passes when every photo is used exactly once, in order", () => {
+    expect(validateAdScript(OK, CTX_ORDERED)).toEqual([])
+  })
+
+  it("rejects a script that skips a photo", () => {
+    const s = structuredClone(OK) as { scenes: Array<{ asset_id?: string; type: string }> }
+    s.scenes = s.scenes.filter((sc) => sc.asset_id !== "asset-2")
+    const errors = validateAdScript(s, CTX_ORDERED)
+    expect(errors.some((e) => e.message.includes("asset-2"))).toBe(true)
+  })
+
+  it("rejects duplicated photos", () => {
+    const s = structuredClone(OK) as { scenes: Array<{ asset_id?: string }> }
+    s.scenes[1].asset_id = "asset-1"
+    const errors = validateAdScript(s, CTX_ORDERED)
+    expect(errors.some((e) => e.message.includes("asset-1") || e.message.includes("once"))).toBe(true)
+  })
+
+  it("rejects photos out of the user's order", () => {
+    const s = structuredClone(OK) as { scenes: Array<{ asset_id?: string }> }
+    s.scenes[0].asset_id = "asset-2"
+    s.scenes[1].asset_id = "asset-1"
+    const errors = validateAdScript(s, CTX_ORDERED)
+    expect(errors.some((e) => e.message.includes("order"))).toBe(true)
+  })
+
+  it("no completeness rules when orderedAssetIds absent (legacy callers)", () => {
+    const s = structuredClone(OK) as { scenes: Array<{ asset_id?: string; type: string }> }
+    s.scenes = s.scenes.filter((sc) => sc.asset_id !== "asset-2")
+    // still a valid 3-scene script by the base rules
+    expect(validateAdScript(s, CTX)).toEqual([])
   })
 })

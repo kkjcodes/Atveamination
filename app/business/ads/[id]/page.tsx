@@ -28,6 +28,7 @@ type Ad = {
   aspectRatio: string
   currentVersion: number
   galleryOptIn: boolean
+  captionsEnabled: boolean
   adScript: AdScript | null
   renderFailureCode: string | null
   renderFailureMessage: string | null
@@ -193,6 +194,16 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
     }
   }
 
+  async function toggleCaptions() {
+    if (!ad) return
+    await fetch(`/api/business/ads/${adId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ captionsEnabled: !ad.captionsEnabled }),
+    })
+    refetch()
+  }
+
   async function toggleGallery() {
     if (!ad) return
     await fetch(`/api/business/ads/${adId}`, {
@@ -331,6 +342,15 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
                       Download video
                     </a>
                     <label className="ml-auto flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ad.captionsEnabled}
+                        onChange={toggleCaptions}
+                        className="rounded"
+                      />
+                      Captions — applies on the next render
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-zinc-600 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={ad.galleryOptIn}

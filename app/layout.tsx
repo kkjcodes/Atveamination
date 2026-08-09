@@ -7,7 +7,7 @@ const geist = Geist({ subsets: ["latin"] });
 
 const SITE_URL = "https://www.atveanimation.com";
 const SITE_NAME = "AtVeAnimation";
-const SITE_DESCRIPTION = "Turn your photo into a cartoon character and create personalised animated videos with AI. Cartoon videos, business ads, and photo-to-video scrapbooks in minutes.";
+const SITE_DESCRIPTION = "Turn your photo into a cartoon character that stars in your videos. Business video ads presented by your own cartoon spokesperson, and personal cartoon videos — made from your photos in minutes.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -23,7 +23,9 @@ export const metadata: Metadata = {
     "AI video generator",
     "personalised animated video",
     "AI ad generator",
-    "photo scrapbook video",
+    "AI spokesperson",
+    "cartoon presenter",
+    "video ads from photos",
     "AtVeAnimation",
   ],
   authors: [{ name: "Kumar Krishnanand" }],

@@ -250,7 +250,7 @@ export default function BusinessOnboarding({
             id="name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="Rosie's Bakery"
+            placeholder="Your business name"
           />
         </div>
 
@@ -277,7 +277,7 @@ export default function BusinessOnboarding({
             id="address"
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="123 Example Street"
+            placeholder="Street address, city"
           />
         </div>
 
@@ -287,13 +287,13 @@ export default function BusinessOnboarding({
             <Label htmlFor="phone" className="text-sm font-medium text-zinc-700 mb-1.5 block">
               Phone <span className="text-xs font-normal text-zinc-400">optional — shown on your ads</span>
             </Label>
-            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="555-013-0142" />
+            <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(555) 013-0142" />
           </div>
           <div>
             <Label htmlFor="website" className="text-sm font-medium text-zinc-700 mb-1.5 block">
               Website <span className="text-xs font-normal text-zinc-400">optional</span>
             </Label>
-            <Input id="website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="yourbusiness.com" />
+            <Input id="website" value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="example.com" />
           </div>
         </div>
 

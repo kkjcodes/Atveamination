@@ -88,16 +88,17 @@ export default function LandingPage() {
               fit="contain"
             />
             <div className="flex flex-1 flex-col p-6">
-              <p className="text-xs font-bold uppercase tracking-widest text-orange-500 mb-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-orange-500 mb-2 flex items-center gap-2">
                 For your business
+                <span className="rounded-full bg-orange-600 px-2 py-0.5 text-[10px] font-bold text-white normal-case tracking-normal">NEW</span>
               </p>
               <h2 className="text-2xl font-bold text-zinc-900">
-                Turn photos of your work into a ready-to-post ad.
+                Your cartoon self presents your business ad.
               </h2>
               <p className="mt-3 text-zinc-600 flex-1">
-                Upload a few photos. We write the script, add voice and music,
-                and make a video sized for social media. No filming or
-                editing.
+                Upload photos and a selfie. Your own cartoon character opens
+                the ad and speaks the script — with voice, music, captions,
+                and a scannable QR code. No filming, no editing, no actors.
               </p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
                 <Link

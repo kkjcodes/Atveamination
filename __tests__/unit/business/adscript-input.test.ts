@@ -3,7 +3,6 @@ import {
   coerceAspectRatio,
   coerceTemplateFamily,
   makeAdScriptInput,
-  enforcePhotoOrder,
 } from "@/lib/business/adscript-input"
 
 describe("coerceTemplateFamily", () => {
@@ -63,40 +62,5 @@ describe("makeAdScriptInput", () => {
     expect(input.address).toBeNull()
     expect(input.notes).toBeNull()
     expect(input.logoAssetId).toBeNull()
-  })
-})
-
-describe("enforcePhotoOrder", () => {
-  const scene = (assetId: string, type = "benefit") => ({
-    type, text: "t", vo_text: "v", asset_id: assetId, min_seconds: 3, motion: "hold",
-  })
-  const endCard = { type: "end_card", lines: ["Biz"], min_seconds: 3 }
-  const script = (scenes: unknown[]) => ({
-    template_family: "clean_modern", aspect_ratio: "9:16",
-    audio: { voice: "warm_f", music_id: "m1", music_level: "normal" },
-    style: { palette_hint: "warm", text_position: "lower_third" },
-    scenes,
-  }) as never
-
-  it("re-sorts photo assignments into user order, keeping scene order", () => {
-    const out = enforcePhotoOrder(script([scene("c", "hook"), scene("a"), scene("b", "cta"), endCard]), ["a", "b", "c"])
-    expect(out.scenes.map((s) => (s as { asset_id?: string }).asset_id)).toEqual(["a", "b", "c", undefined])
-    expect(out.scenes.map((s) => s.type)).toEqual(["hook", "benefit", "cta", "end_card"])
-  })
-
-  it("keeps already-ordered assignments untouched", () => {
-    const out = enforcePhotoOrder(script([scene("a", "hook"), scene("c"), endCard]), ["a", "b", "c"])
-    expect(out.scenes.map((s) => (s as { asset_id?: string }).asset_id)).toEqual(["a", "c", undefined])
-  })
-
-  it("handles duplicate asset ids stably", () => {
-    const out = enforcePhotoOrder(script([scene("b", "hook"), scene("a"), scene("b", "cta"), endCard]), ["a", "b"])
-    expect(out.scenes.map((s) => (s as { asset_id?: string }).asset_id)).toEqual(["a", "b", "b", undefined])
-  })
-
-  it("does not mutate the input script", () => {
-    const input = script([scene("b", "hook"), scene("a"), endCard])
-    enforcePhotoOrder(input, ["a", "b"])
-    expect((input as { scenes: { asset_id?: string }[] }).scenes[0].asset_id).toBe("b")
   })
 })

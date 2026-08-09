@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { captionFragment, contactStripFragment } from "@/lib/business/render/text-overlay"
+import { captionFragment, contactStripFragment, splitCaption } from "@/lib/business/render/text-overlay"
 import { qrTarget } from "@/lib/business/render/qr"
 import { pickDominantHex } from "@/lib/business/render/brand-color"
 import { scriptWithAspect } from "@/lib/business/aspect-variants"
@@ -17,6 +17,26 @@ describe("captionFragment", () => {
     const lifted = captionFragment("hello", 1080, 1920, null, 600)
     const yOf = (s: string) => Number(/y=(\d+)/.exec(s)![1])
     expect(yOf(lifted)).toBe(yOf(flat) - 600)
+  })
+})
+
+describe("splitCaption", () => {
+  it("keeps short captions on one line", () => {
+    expect(splitCaption("Fresh pastries every morning")).toEqual(["Fresh pastries every morning"])
+  })
+  it("splits long narration into two balanced lines at a word boundary", () => {
+    const long = "A stunning new rental just hit the market in the heart of Ridgeview and it will not last long"
+    const lines = splitCaption(long)
+    expect(lines.length).toBe(2)
+    expect(lines.join(" ")).toBe(long)
+    expect(Math.abs(lines[0].length - lines[1].length)).toBeLessThan(15)
+  })
+  it("two-line captions never sink below a readable size", () => {
+    const long = "A stunning new rental just hit the market in the heart of Ridgeview and it will not last long"
+    const f = captionFragment(long, 1080, 1920, null)
+    const sizes = [...f.matchAll(/fontsize=(\d+)/g)].map((m) => Number(m[1]))
+    expect(sizes.length).toBe(2)
+    for (const s of sizes) expect(s).toBeGreaterThanOrEqual(28)
   })
 })
 
