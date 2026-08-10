@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { uploadBlob } from "@/lib/storage/client"
 import { describeCharacter } from "@/lib/ai/describe"
+import { screenPublicFigure } from "@/lib/ai/likeness-screen"
 import sharp from "sharp"
 import { validateImageFile, UploadValidationError } from "@/lib/business/upload"
 
@@ -44,6 +45,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "file is required" }, { status: 400 })
   }
 
+  // Likeness consent: the uploader must attest they have the right to use
+  // this person's likeness. Enforced server-side so API callers can't skip
+  // the checkbox.
+  if (formData.get("likeness_consent") !== "true") {
+    return NextResponse.json(
+      { error: "Please confirm this photo is of you, or of someone who has given you permission." },
+      { status: 400 },
+    )
+  }
+
   // Enforce size + MIME limits BEFORE buffering. Sharp catches
   // decompression bombs via a pixel-count check after metadata read.
   try {
@@ -66,6 +77,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Image too high-resolution (${preMeta.width}×${preMeta.height})` }, { status: 413 })
   }
   const buffer = await sharp(rawBuffer).rotate().jpeg({ quality: 92 }).toBuffer()
+
+  // Public-figure screen: block obvious celebrity uploads before any
+  // character exists. High-confidence matches only; fails open on API errors.
+  const screen = await screenPublicFigure(buffer, "image/jpeg")
+  if (screen.block) {
+    return NextResponse.json({ error: screen.reason }, { status: 422 })
+  }
+
   const blobPath = `${userId}/characters/${Date.now()}-${file.name.replace(/\.[^.]+$/, "")}.jpg`
 
   // Auto-generate an identity-anchoring description via Claude vision unless the

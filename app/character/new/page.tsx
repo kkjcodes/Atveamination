@@ -73,6 +73,7 @@ export default function NewCharacterPage() {
 
   const [step, setStep] = useState<Step>(1)
   const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [likenessConsent, setLikenessConsent] = useState(false)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [characterName, setCharacterName] = useState("")
   const [characterDescription, setCharacterDescription] = useState("")
@@ -135,6 +136,7 @@ export default function NewCharacterPage() {
     try {
       const fd = new FormData()
       fd.append("photo", photoFile)
+      fd.append("likeness_consent", likenessConsent ? "true" : "false")
       if (characterName.trim()) fd.append("name", characterName.trim())
       if (characterDescription.trim()) {
         fd.append("character_description", characterDescription.trim())
@@ -413,11 +415,23 @@ export default function NewCharacterPage() {
                 </p>
               </div>
 
-              <div className="mt-6 flex justify-end">
+              <label className="mt-6 flex items-start gap-2 text-sm text-zinc-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={likenessConsent}
+                  onChange={(e) => setLikenessConsent(e.target.checked)}
+                  className="mt-0.5 rounded"
+                />
+                This photo is of me, or of someone who has given me permission to
+                use their likeness.
+              </label>
+
+              <div className="mt-4 flex justify-end">
                 <Button
-                  disabled={!photoFile || submitting}
+                  disabled={!photoFile || !likenessConsent || submitting}
                   onClick={handleUploadAndGenerateStyles}
                   size="lg"
+                  title={!likenessConsent ? "Please confirm you have permission to use this photo." : undefined}
                 >
                   {submitting ? "Uploading…" : "Generate Cartoon Styles"}
                 </Button>
