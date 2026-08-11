@@ -123,7 +123,7 @@ export default function ScrapbookDetailPage({ params }: { params: Promise<{ id: 
         // useless parser error — try JSON first, fall back to a text.
         let msg = "Generation failed"
         try {
-          const data = await res.json()
+          const data = await res.json().catch(() => ({} as Record<string, never>))
           msg = data.error ?? msg
         } catch { /* keep default */ }
         throw new Error(msg)
@@ -156,7 +156,7 @@ export default function ScrapbookDetailPage({ params }: { params: Promise<{ id: 
       if (!res.ok) {
         let msg = "Couldn't start creating the video."
         try {
-          const data = await res.json()
+          const data = await res.json().catch(() => ({} as Record<string, never>))
           msg = data.error ?? msg
         } catch { /* keep default */ }
         throw new Error(msg)

@@ -93,7 +93,7 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
         body: JSON.stringify({ editRequest: requestText }),
       })
       if (!res.ok) {
-        const data = await res.json()
+        const data = await res.json().catch(() => ({} as Record<string, never>))
         throw new Error(data.error ?? "Edit failed")
       }
       setEditText("")
@@ -182,7 +182,7 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
         body: JSON.stringify({ versionNo }),
       })
       if (!res.ok) {
-        const data = await res.json()
+        const data = await res.json().catch(() => ({} as Record<string, never>))
         throw new Error(data.error ?? "Revert failed")
       }
       setSelectedVersion(null)

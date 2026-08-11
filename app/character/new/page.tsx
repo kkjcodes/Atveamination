@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { CharacterOption, JobStatus } from "@/types"
 import { PRESET_VOICES } from "@/lib/fal/client"
+import { readJson, friendlyFetchError } from "@/lib/client/safe-json"
 
 const STYLES = ["pixar", "anime", "ghibli", "chibi", "comic", "sketch", "watercolor", "claymation"] as const
 const STYLE_LABELS: Record<string, string> = {
@@ -143,8 +144,10 @@ export default function NewCharacterPage() {
       }
 
       const res = await fetch("/api/characters", { method: "POST", body: fd })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? "We couldn't save your photo. Check your connection and try again.")
+      const data = await readJson<{ error?: string; character?: { id: string } }>(res)
+      if (!res.ok || !data?.character) {
+        throw new Error(data?.error ?? friendlyFetchError(res, "We couldn't save your photo. Check your connection and try again."))
+      }
 
       const charId: string = data.character.id
       setCharacterId(charId)
@@ -154,8 +157,10 @@ export default function NewCharacterPage() {
       const stylesRes = await fetch(`/api/characters/${charId}/generate-styles`, {
         method: "POST",
       })
-      const stylesData = await stylesRes.json()
-      if (!stylesRes.ok) throw new Error(stylesData.error ?? "We couldn't make the style previews. Try uploading again.")
+      const stylesData = await readJson<{ error?: string; options?: never[] }>(stylesRes)
+      if (!stylesRes.ok || !stylesData?.options) {
+        throw new Error(stylesData?.error ?? friendlyFetchError(stylesRes, "We couldn't make the style previews. Try uploading again."))
+      }
 
       setStyleOptions(stylesData.options)
     } catch (e) {
@@ -234,8 +239,8 @@ export default function NewCharacterPage() {
     const poll = async () => {
       try {
         const res = await fetch(`/api/jobs/${trainingJobId}`)
-        const data = await res.json()
-        if (!res.ok) return
+        const data = await readJson<{ job: { status: JobStatus } }>(res)
+        if (!res.ok || !data) return
         const status: JobStatus = data.job.status
         setTrainingStatus(status)
         // Fake progress so the bar animates while waiting
@@ -260,8 +265,8 @@ export default function NewCharacterPage() {
     setLoadingMoreStyles(true)
     try {
       const res = await fetch(`/api/characters/${characterId}/generate-styles?batch=2`, { method: "POST" })
-      const data = await res.json()
-      if (res.ok) {
+      const data = await readJson<{ options: never[] }>(res)
+      if (res.ok && data?.options) {
         setStyleOptions((prev) => [...prev, ...data.options])
         setBatch2Loaded(true)
       }

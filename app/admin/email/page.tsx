@@ -29,13 +29,13 @@ export default function AdminEmailPage() {
     setLoading(false)
 
     if (res.ok) {
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as Record<string, never>))
       setResult(data)
       setSubject("")
       setBody("")
       setUserId("")
     } else {
-      const { error: msg } = await res.json()
+      const { error: msg } = await res.json().catch(() => ({ error: undefined }))
       setError(msg ?? "Failed to send")
     }
   }

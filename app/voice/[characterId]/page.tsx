@@ -103,10 +103,12 @@ export default function VoiceSetupPage() {
       form.append("text", testPhrase)
       const res = await fetch("/api/voice/preview", { method: "POST", body: form })
       if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error ?? "Preview failed")
+        const d = await res.json().catch(() => ({}))
+        throw new Error((d as { error?: string }).error ?? "Preview failed")
       }
-      const { audio_url } = await res.json()
+      const body = await res.json().catch(() => null) as { audio_url?: string } | null
+      if (!body?.audio_url) throw new Error("Preview failed. Try again in a moment.")
+      const { audio_url } = body
       setPreviewAudioUrl(audio_url)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to generate preview")

@@ -408,7 +408,7 @@ export default function StudioProjectPage() {
     try {
       const res = await fetch(`/api/projects/${projectId}/stitch`, { method: "POST" })
       if (!res.ok) {
-        const d = await res.json()
+        const d = await res.json().catch(() => ({}))
         throw new Error(d.error ?? "Stitch failed")
       }
       const { project } = await res.json()

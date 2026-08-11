@@ -221,7 +221,7 @@ function StartModal({
           language,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({} as Record<string, never>))
       if (!res.ok) {
         if (res.status === 429 && data.resetsAt) {
           // Date.now() is fine here — this runs inside a click-triggered
@@ -648,8 +648,8 @@ function StudioContent() {
       body: JSON.stringify({ character_ids: charIds, voice_id: resolvedVoiceId, title, language }),
     })
     if (!res.ok) {
-      const data = await res.json()
-      throw new Error(data.error ?? "Failed to create project")
+      const data = await res.json().catch(() => ({}))
+      throw new Error((data as { error?: string }).error ?? "Failed to create project")
     }
     const { project } = await res.json()
     projectIdRef.current = project.id

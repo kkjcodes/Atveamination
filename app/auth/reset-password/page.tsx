@@ -48,7 +48,7 @@ function ResetForm() {
       setDone(true)
       setTimeout(() => router.push("/auth/login"), 2000)
     } else {
-      const { error: msg } = await res.json()
+      const { error: msg } = await res.json().catch(() => ({ error: undefined }))
       setError(msg ?? "Something went wrong")
     }
   }

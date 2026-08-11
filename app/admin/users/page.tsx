@@ -53,7 +53,7 @@ export default function AdminUsers() {
         : prev
       )
     } else {
-      const { error: msg } = await res.json()
+      const { error: msg } = await res.json().catch(() => ({ error: undefined }))
       alert(msg ?? "Failed to update role")
     }
     setUpdating(null)
