@@ -176,6 +176,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const result = await generateAdScript(input)
   if (!result.ok) {
+    console.error(`[adscript] ${ad.id} generation failed: ${JSON.stringify(result.errors)}`)
     await prisma.ad.update({
       where: { id: ad.id },
       data: { status: "failed" },

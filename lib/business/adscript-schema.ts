@@ -67,6 +67,11 @@ const SCENE_MIN = 3
 const SCENE_MAX = 9
 const TOTAL_MIN_SEC = 10
 const TOTAL_MAX_SEC = 35
+// The duration is an estimate (words/2.5), not a measurement — real TTS often
+// lands shorter. Rejecting at exactly 35s threw away scripts that would have
+// rendered fine (prod 422s at 35.7s), so enforcement allows a 3s grace band
+// above the 35s target the prompt asks for.
+const TOTAL_MAX_SEC_HARD = 38
 
 function wordCount(s: string): number {
   return s.trim().split(/\s+/).filter(Boolean).length
@@ -256,7 +261,7 @@ export function validateAdScript(
     }
   }
 
-  if (totalDerived < TOTAL_MIN_SEC || totalDerived > TOTAL_MAX_SEC) {
+  if (totalDerived < TOTAL_MIN_SEC || totalDerived > TOTAL_MAX_SEC_HARD) {
     errors.push({
       path: "scenes",
       message: `derived total duration ${totalDerived.toFixed(1)}s must be ${TOTAL_MIN_SEC}–${TOTAL_MAX_SEC}s`,

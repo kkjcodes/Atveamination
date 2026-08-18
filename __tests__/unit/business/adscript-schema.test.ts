@@ -149,6 +149,19 @@ describe("validateAdScript", () => {
     const errors = validateAdScript(bad, CTX)
     expect(errors.some((e) => e.message.includes("derived total duration"))).toBe(true)
   })
+
+  it("accepts derived duration in the 35–38s grace band", () => {
+    // 3 vo scenes at 11 + 0.5s each + 3s end card = 37.5s — over the 35s
+    // target the prompt asks for, but within the estimator-error grace band.
+    const errors = validateAdScript(OK, { ...CTX, voDurationEstimator: () => 11 })
+    expect(errors).toEqual([])
+  })
+
+  it("rejects derived duration above the grace band", () => {
+    // 3 vo scenes at 12 + 0.5s each + 3s end card = 40.5s
+    const errors = validateAdScript(OK, { ...CTX, voDurationEstimator: () => 12 })
+    expect(errors.some((e) => e.message.includes("derived total duration"))).toBe(true)
+  })
 })
 
 describe("photo completeness and order (orderedAssetIds)", () => {
