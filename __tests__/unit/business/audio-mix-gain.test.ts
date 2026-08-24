@@ -7,10 +7,10 @@ import { musicGain } from "@/lib/business/render/audio-mix"
 
 describe("musicGain", () => {
   it("drops the bed well under the voice when a voiceover is present", () => {
-    // -12 static + ~9 dB duck ≈ -21 under voice during speech (industry
-    // envelope: -18 to -24).
-    expect(musicGain("normal", true)).toBe(-12)
-    expect(musicGain("quiet", true)).toBe(-18)
+    // -15 static + ~9 dB duck ≈ -24 under voice during speech (industry
+    // envelope: -18 to -24; softened 3 dB on user request 2026-08-23).
+    expect(musicGain("normal", true)).toBe(-15)
+    expect(musicGain("quiet", true)).toBe(-21)
   })
 
   it("keeps music at full level for music-only ads", () => {

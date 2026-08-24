@@ -41,10 +41,11 @@ export function musicGain(level: MusicLevel, hasVoiceover: boolean): number {
     return level === "quiet" ? -6 : 0
   }
   // Bed under narration, calibrated to the industry envelope (music -18 to
-  // -24 dB under the voice WHILE SPEAKING, audible in the gaps): -12 dB static
-  // bed + ~9 dB sidechain duck ≈ -21 during speech for "normal"; "quiet"
-  // lands ≈ -27.
-  return level === "quiet" ? -18 : -12
+  // -24 dB under the voice WHILE SPEAKING, audible in the gaps): -15 dB static
+  // bed + ~9 dB sidechain duck ≈ -24 during speech for "normal"; "quiet"
+  // lands ≈ -30. (Was -12/-18; softened 3 dB on user request 2026-08-23 —
+  // narration should lead by a wider margin.)
+  return level === "quiet" ? -21 : -15
 }
 
 // Build the full mixed audio track. Inputs: scene VO clips + music path +

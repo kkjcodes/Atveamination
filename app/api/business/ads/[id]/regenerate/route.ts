@@ -7,7 +7,7 @@ import {
   makeAdScriptInput,
 } from "@/lib/business/adscript"
 import { musicForFamily } from "@/lib/business/music-catalog"
-import { occasionById } from "@/lib/business/occasions"
+import { occasionById, occasionBrief } from "@/lib/business/occasions"
 import type { AdScript, TemplateFamily, AspectRatio, Voice } from "@/lib/business/adscript-schema"
 import { emit } from "@/lib/events"
 import { killSwitchEngaged } from "@/lib/limits"
@@ -73,7 +73,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     ad.aspectRatio as AspectRatio,
     availableMusic,
     {
-      occasionBrief: occasionById(ad.occasion)?.brief || null,
+      occasionBrief: occasionBrief(occasionById(ad.occasion)),
       phone: ad.business.phone,
       website: ad.business.website,
     },

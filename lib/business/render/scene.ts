@@ -81,7 +81,7 @@ function endCardFfmpegArgs(
 
 // clean_modern: full-bleed photo with motion + lower-third caption.
 async function renderCleanModern(input: SceneRenderInput): Promise<void> {
-  const { scene, sourceImagePath, durationSec, outputPath, width, height, captionFontPath, textPosition } = input
+  const { scene, sourceImagePath, durationSec, outputPath, width, height, captionFontPath, textPosition, paletteBgHex } = input
   const motion = scene.type === "end_card" ? "hold" : scene.motion
   const motionFilter = buildMotionFilter(motion, durationSec, width, height)
 
@@ -102,7 +102,7 @@ async function renderCleanModern(input: SceneRenderInput): Promise<void> {
   const text = overlayTextForScene(scene)
   const extras = [
     input.captionText
-      ? captionFragment(input.captionText, width, height, captionFontPath)
+      ? captionFragment(input.captionText, width, height, captionFontPath, 0, paletteBgHex)
       : text ? drawtextFragment(text, textPosition, width, height, captionFontPath) : null,
     input.contactStripText ? contactStripFragment(input.contactStripText, width, height, captionFontPath) : null,
   ].filter(Boolean)
@@ -270,7 +270,7 @@ export async function renderPresenterScene(
       overlays.push(`drawtext=text='${escapeDrawtext(lines[i])}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${y}:borderw=3:bordercolor=0x00000080`)
     }
   } else if (input.captionText) {
-    overlays.push(captionFragment(input.captionText, width, height, captionFontPath))
+    overlays.push(captionFragment(input.captionText, width, height, captionFontPath, 0, paletteBgHex))
   } else if (text) {
     overlays.push(drawtextFragment(text, textPosition, width, height, captionFontPath))
   }

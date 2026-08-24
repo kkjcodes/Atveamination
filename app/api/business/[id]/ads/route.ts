@@ -10,7 +10,7 @@ import {
 } from "@/lib/business/adscript"
 import { VOICES, type Voice } from "@/lib/business/adscript-schema"
 import { musicForFamily } from "@/lib/business/music-catalog"
-import { occasionById } from "@/lib/business/occasions"
+import { occasionById, occasionBrief } from "@/lib/business/occasions"
 import { isPresenterEligibleStyle } from "@/lib/business/presenter"
 import { emit } from "@/lib/events"
 import { killSwitchEngaged } from "@/lib/limits"
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     aspectRatio,
     availableMusic,
     {
-      occasionBrief: occasion?.brief || null,
+      occasionBrief: occasionBrief(occasion),
       phone: business.phone,
       website: business.website,
     },

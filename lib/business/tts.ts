@@ -9,6 +9,7 @@ import { tmpdir } from "os"
 import type { Voice } from "@/lib/business/adscript-schema"
 import { ffprobeBinary } from "@/lib/paths"
 import { synthesizeKokoro } from "@/lib/kokoro/synth"
+import { applyPronunciationLexicon } from "@/lib/business/pronunciation-lexicon"
 
 if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic)
 ffmpeg.setFfprobePath(ffprobeBinary())
@@ -70,16 +71,15 @@ export type SynthResult = {
   cached: boolean
 }
 
-// The M3/M4 payoff: an edit that changes ONE vo_text re-synths ONE clip, not
-// five. Cache hit skips the fal call entirely; cache miss uploads to blob
-// AND stores the row so the next call reuses it.
-export async function synthesize(voice: Voice, text: string, pronunciationHint?: string): Promise<SynthResult> {
-  const voiceId = VOICE_MAP[voice]
-  if (!voiceId) throw new Error(`Unknown voice archetype: ${voice}`)
-
-  // Apply pronunciation hint if present. Format: "Nguyen's -> Win's" → we
-  // replace the LHS with the RHS in the actual TTS input. Keeps the on-screen
-  // vo_text canonical (analytics + history) while mispronunciations get fixed.
+// Build the actual TTS input from canonical vo_text. Two transforms, both
+// TTS-only (captions render from the untouched vo_text):
+//   1. pronunciation_hint from the script model. Format: "Nguyen's -> Win's"
+//      → replace LHS with RHS.
+//   2. Pronunciation lexicon → inline phoneme markup. English voices only:
+//      the hindi/spanish Kokoro endpoints read the markup literally.
+// Exported for tests. Called before hashing, so a lexicon change naturally
+// re-synthesizes affected clips instead of serving stale cached audio.
+export function prepareTtsInput(voiceId: string, text: string, pronunciationHint?: string): string {
   let ttsInput = text.trim()
   if (pronunciationHint) {
     const arrow = pronunciationHint.split(/->|→/)
@@ -89,6 +89,24 @@ export async function synthesize(voice: Voice, text: string, pronunciationHint?:
       if (lhs && rhs) ttsInput = ttsInput.split(lhs).join(rhs)
     }
   }
+  const prefix = voiceId.slice(0, 2).toLowerCase()
+  const isEnglishVoice = prefix === "af" || prefix === "am" || prefix === "bf" || prefix === "bm"
+  if (isEnglishVoice) ttsInput = applyPronunciationLexicon(ttsInput)
+  return ttsInput
+}
+
+// The M3/M4 payoff: an edit that changes ONE vo_text re-synths ONE clip, not
+// five. Cache hit skips the fal call entirely; cache miss uploads to blob
+// AND stores the row so the next call reuses it.
+export async function synthesize(voice: Voice, text: string, pronunciationHint?: string): Promise<SynthResult> {
+  const voiceId = VOICE_MAP[voice]
+  if (!voiceId) throw new Error(`Unknown voice archetype: ${voice}`)
+
+  // Growth signal for the lexicon: the script model reaching for a hint
+  // means it hit a word it expects TTS to fumble — audition it (see
+  // pronunciation-lexicon.ts header) and promote it to the dictionary.
+  if (pronunciationHint) console.log(`[tts] pronunciation_hint used: ${pronunciationHint}`)
+  const ttsInput = prepareTtsInput(voiceId, text, pronunciationHint)
 
   const hash = contentHash(ENGINE, voiceId, ttsInput)
 

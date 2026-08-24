@@ -41,7 +41,7 @@ beforeEach(() => {
 describe("POST /api/auth/register — segment persistence", () => {
   it("maps client 'personal' to DB enum 'family'", async () => {
     const res = await POST(makeRequest({
-      email: "a@b.com",
+      email: "a@example.com",
       password: "12345678",
       name: "Test",
       segment: "personal",
@@ -54,7 +54,7 @@ describe("POST /api/auth/register — segment persistence", () => {
 
   it("accepts 'business' verbatim and persists with timestamp", async () => {
     const res = await POST(makeRequest({
-      email: "a@b.com",
+      email: "a@example.com",
       password: "12345678",
       name: "Test",
       segment: "business",
@@ -67,7 +67,7 @@ describe("POST /api/auth/register — segment persistence", () => {
 
   it("also accepts 'family' verbatim (backward-compat with existing segment API)", async () => {
     const res = await POST(makeRequest({
-      email: "a@b.com",
+      email: "a@example.com",
       password: "12345678",
       name: "Test",
       segment: "family",
@@ -81,7 +81,7 @@ describe("POST /api/auth/register — segment persistence", () => {
     // Invalid segment shouldn't 400 — the value is optional analytics
     // metadata, not a required field. Just don't stamp anything.
     const res = await POST(makeRequest({
-      email: "a@b.com",
+      email: "a@example.com",
       password: "12345678",
       name: "Test",
       segment: "chef",
@@ -94,7 +94,7 @@ describe("POST /api/auth/register — segment persistence", () => {
 
   it("omits segment field entirely when not provided", async () => {
     const res = await POST(makeRequest({
-      email: "a@b.com",
+      email: "a@example.com",
       password: "12345678",
       name: "Test",
     }) as never)
@@ -107,7 +107,7 @@ describe("POST /api/auth/register — segment persistence", () => {
   it("still rejects when email already exists (segment doesn't bypass 409)", async () => {
     findUniqueMock.mockResolvedValue({ id: "existing" })
     const res = await POST(makeRequest({
-      email: "a@b.com",
+      email: "a@example.com",
       password: "12345678",
       segment: "business",
     }) as never)

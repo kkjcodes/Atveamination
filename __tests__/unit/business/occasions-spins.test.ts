@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { OCCASIONS, occasionsForDate, occasionById, inSeasonalWindow } from "@/lib/business/occasions"
+import { OCCASIONS, occasionsForDate, occasionById, occasionBrief, inSeasonalWindow } from "@/lib/business/occasions"
 import { QUICK_SPINS, spinsForDate } from "@/lib/business/spins"
 
 describe("inSeasonalWindow", () => {
@@ -15,6 +15,64 @@ describe("inSeasonalWindow", () => {
     expect(inSeasonalWindow(new Date(2026, 11, 25), wrap)).toBe(true)
     expect(inSeasonalWindow(new Date(2026, 0, 3), wrap)).toBe(true)
     expect(inSeasonalWindow(new Date(2026, 5, 1), wrap)).toBe(false)
+  })
+})
+
+describe("rakhi occasion", () => {
+  it("appears only in its Jul-Aug window", () => {
+    const aug = occasionsForDate(new Date(2026, 7, 20)).map((o) => o.id)
+    const oct = occasionsForDate(new Date(2026, 9, 10)).map((o) => o.id)
+    expect(aug).toContain("rakhi")
+    expect(oct).not.toContain("rakhi")
+  })
+  it("brief carries the concrete date for a known year", () => {
+    const brief = occasionBrief(occasionById("rakhi"), new Date(2026, 7, 20))
+    expect(brief).toContain("Friday, August 28")
+    expect(brief).toContain("state the date")
+  })
+  it("brief falls back to the undated text for unknown years", () => {
+    const brief = occasionBrief(occasionById("rakhi"), new Date(2031, 7, 1))
+    expect(brief).toContain("Raksha Bandhan")
+    expect(brief).not.toContain("This year Raksha Bandhan falls on")
+  })
+  it("occasionBrief passes through other occasions and handles null", () => {
+    expect(occasionBrief(occasionById("sale"))).toContain("sale or special offer")
+    expect(occasionBrief(occasionById("showcase"))).toBeNull()
+    expect(occasionBrief(null)).toBeNull()
+  })
+})
+
+describe("holiday catalog 2026", () => {
+  it("Diwali shows in its window with the 2026 date in the brief", () => {
+    const ids = occasionsForDate(new Date(2026, 9, 20)).map((o) => o.id) // Oct 20
+    expect(ids).toContain("diwali")
+    expect(ids).toContain("dussehra")
+    const brief = occasionBrief(occasionById("diwali"), new Date(2026, 9, 20))
+    expect(brief).toContain("Sunday, November 8")
+  })
+  it("Labor Day and back-to-school show in late August", () => {
+    const ids = occasionsForDate(new Date(2026, 7, 25)).map((o) => o.id) // Aug 25
+    expect(ids).toContain("labor_day")
+    expect(ids).toContain("back_to_school")
+    expect(ids).toContain("rakhi")
+    expect(ids).toContain("onam")
+    expect(occasionBrief(occasionById("labor_day"), new Date(2026, 7, 25))).toContain("Monday, September 7")
+  })
+  it("moon-dependent Eid briefs stay undated and defer to notes", () => {
+    const brief = occasionBrief(occasionById("eid_al_fitr"), new Date(2026, 2, 10))
+    expect(brief).toContain("moon sighting")
+    expect(brief).not.toContain("This year")
+  })
+  it("new evergreen store occasions are always available", () => {
+    const ids = occasionsForDate(new Date(2026, 5, 10)).map((o) => o.id) // Jun 10
+    for (const id of ["grand_opening", "new_location", "anniversary", "sale", "hiring"]) {
+      expect(ids).toContain(id)
+    }
+  })
+  it("every dated brief's occasion also has a window", () => {
+    for (const o of OCCASIONS) {
+      if (o.datedBrief) expect(o.window, `${o.id} has datedBrief but no window`).toBeTruthy()
+    }
   })
 })
 

@@ -1,4 +1,5 @@
 import { anthropic, VISION_MODEL } from "@/lib/ai/client"
+import { lexiconTerms } from "@/lib/business/pronunciation-lexicon"
 import { parseVisionJson } from "@/lib/scrapbook/vision-parse"
 import {
   MOTIONS,
@@ -95,8 +96,11 @@ Rules (STRICT — validation will reject violations):
 - Photos are listed in the user's chosen order. Scene 1 uses photo 1, scene 2 uses photo 2, and so on. The narration and on-screen text of each scene MUST describe what is actually in that scene's photo.
 - Word caps for the "text" field: hook ≤ 8 words, benefit ≤ 12 words, cta ≤ 8 words.
 - End-card lines: ≤ 40 chars each, at least one line. If a Phone or Website is provided above, include each on its own end-card line.
-- vo_text: required on every non-end_card scene, ≤ 30 words. Natural spoken sentence, not a copy of the overlay text.
+- vo_text: required on every non-end_card scene, ≤ 30 words hard cap — but AIM for 8-14 words. Short punchy narration keeps scenes fast; one crisp sentence beats two flowing ones. Natural spoken sentence, not a copy of the overlay text.
+- Contact facts (business name, address, phone, website) must be copied EXACTLY as given above — never paraphrase, reformat, round, or abbreviate them. If the address says "123 Example Street, Suite 4", the ad says exactly that.
+- No generic ad filler. BANNED phrases and their kin: "for all your needs", "a true treat for everyone", "something for everyone", "taste the difference", "look no further", "your one-stop shop", "come see us today". Be concrete instead: name the product in the photo, the offer, or the date.
 - pronunciation_hint: OPTIONAL. Add ONLY when a word is likely mispronounced by TTS (e.g. non-English names, initialisms, street types). Format: brief respelling ("Nguyen's -> Win's").
+- Non-English cultural terms (festivals, dishes, rituals): the narrator can only pronounce these correctly: ${lexiconTerms().join(", ")}. Any OTHER such term must NOT appear in vo_text — describe it in plain English instead (e.g. "the festival of lights", "sweet treats"). The business's own name, people's names, and street names are exempt (use pronunciation_hint for those).
 - min_seconds: 3–7 per scene (positive number, required on every scene including end_card). Actual playback stretches to (min_seconds OR vo_duration + 0.5, whichever is greater).
 - Derived total duration must be 10–35 seconds.
 - template_family: "${input.templateFamily}"

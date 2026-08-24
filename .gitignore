@@ -93,3 +93,6 @@ scripts/promo/videos/
 scripts/promo/playwright-report/
 scripts/promo/e2e/videos/
 scripts/promo/screenshots/
+
+# Customer content — never commit
+Customer videos/

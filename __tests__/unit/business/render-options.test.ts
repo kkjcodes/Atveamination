@@ -18,6 +18,17 @@ describe("captionFragment", () => {
     const yOf = (s: string) => Number(/y=(\d+)/.exec(s)![1])
     expect(yOf(lifted)).toBe(yOf(flat) - 600)
   })
+  it("accent hex renders a brand-color pill with legible text", () => {
+    const dark = captionFragment("hello", 1080, 1920, null, 0, "0xC2410C")
+    expect(dark).toContain("boxcolor=0xC2410C@0.88")
+    expect(dark).toContain("fontcolor=0xFFFFFF")
+    const light = captionFragment("hello", 1080, 1920, null, 0, "0xF5D90A")
+    expect(light).toContain("fontcolor=0x1A1A1A")
+  })
+  it("no accent keeps the black box", () => {
+    const f = captionFragment("hello", 1080, 1920, null)
+    expect(f).toContain("boxcolor=0x00000080")
+  })
 })
 
 describe("splitCaption", () => {

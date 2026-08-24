@@ -101,7 +101,7 @@ export function endCardStack(
   const totalHeight = sizes.reduce((sum, s) => sum + s + 20, 0)
   const startY = Math.round((outHeight - totalHeight) / 2)
   let cursorY = startY
-  return lines
+  const stack = lines
     .map((line, i) => {
       const escaped = escapeDrawtext(line)
       const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
@@ -111,6 +111,14 @@ export function endCardStack(
       return `drawtext=text='${escaped}':${font}:fontsize=${lineSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${y}:borderw=2:bordercolor=0x00000060`
     })
     .join(",")
+  // Small maker credit replacing the old full-screen outro card — the
+  // customer's brand keeps the final frame, we keep a quiet corner line.
+  // Bottom-center: the QR (when present) owns the bottom-right corner.
+  const creditFont = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
+  const creditSize = Math.max(14, Math.round(outHeight * 0.014))
+  const creditY = outHeight - creditSize - Math.round(outHeight * 0.014)
+  const credit = `drawtext=text='made with atveanimation.com':${creditFont}:fontsize=${creditSize}:fontcolor=0xFFFFFF@0.45:x=(w-text_w)/2:y=${creditY}`
+  return `${stack},${credit}`
 }
 
 // Extract the burned overlay text for a scene by type. end_card lines are
@@ -142,24 +150,41 @@ export function splitCaption(text: string): string[] {
   return [words.slice(0, best).join(" "), words.slice(best).join(" ")]
 }
 
+// Perceived-luminance check for picking legible text on a colored ground.
+export function isLightHex(hex: string): boolean {
+  const h = hex.replace(/^0x/i, "").replace(/^#/, "")
+  if (h.length < 6) return false
+  const r = parseInt(h.slice(0, 2), 16)
+  const g = parseInt(h.slice(2, 4), 16)
+  const b = parseInt(h.slice(4, 6), 16)
+  if ([r, g, b].some(Number.isNaN)) return false
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150
+}
+
 export function captionFragment(
   text: string,
   outWidth: number,
   outHeight: number,
   fontPath: string | null,
   bottomReserved: number = 0,
+  // Brand/palette hex ("0xRRGGBB") → caption renders as a compact brand-color
+  // pill instead of the flat black box (post-mortem: the black band read as
+  // unbranded). Null keeps the black-box look.
+  accentHex: string | null = null,
 ): string {
   const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
   const lines = splitCaption(text)
   const size = Math.min(...lines.map((l) => fitFontSize(l, outWidth, Math.round(outHeight * 0.032))))
   const margin = Math.round(outHeight * 0.02)
   const lineGap = Math.round(size * 0.45)
+  const boxColor = accentHex ? `${accentHex}@0.88` : "0x00000080"
+  const fontColor = accentHex && isLightHex(accentHex) ? "0x1A1A1A" : "0xFFFFFF"
   // Stack from the bottom up.
   return lines
     .map((line, i) => {
       const fromBottom = (lines.length - 1 - i) * (size + lineGap)
       const y = outHeight - bottomReserved - margin - size - fromBottom
-      return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${size}:fontcolor=0xFFFFFF:x=(w-text_w)/2:y=${y}:box=1:boxcolor=0x00000080:boxborderw=12`
+      return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${size}:fontcolor=${fontColor}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=14`
     })
     .join(",")
 }

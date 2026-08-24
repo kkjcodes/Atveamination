@@ -38,7 +38,7 @@ vi.mock("fs", async () => {
   return { ...actual, promises: { ...actual.promises, writeFile: async () => {}, unlink: async () => {} } }
 })
 
-const { synthesize } = await import("@/lib/business/tts")
+const { synthesize, prepareTtsInput } = await import("@/lib/business/tts")
 
 // Prevent the network fetch — synthesize calls fetch(audioUrl) to probe.
 ;(globalThis as unknown as { fetch: unknown }).fetch = vi.fn().mockResolvedValue({
@@ -119,5 +119,22 @@ describe("synthesize (TTS with cache)", () => {
     mockFalSubscribe.mockResolvedValue({ data: { something_else: true } })
 
     await expect(synthesize("warm_f", "hi")).rejects.toThrow(/no audio URL/i)
+  })
+})
+
+describe("prepareTtsInput (pronunciation lexicon gating)", () => {
+  it("applies phoneme markup for English voices", () => {
+    expect(prepareTtsInput("af_heart", "This Rakhi, celebrate."))
+      .toBe("This [Rakhi](/ɹˈɑki/), celebrate.")
+  })
+
+  it("skips the lexicon for Hindi voices — that endpoint reads markup literally", () => {
+    expect(prepareTtsInput("hf_alpha", "This Rakhi, celebrate."))
+      .toBe("This Rakhi, celebrate.")
+  })
+
+  it("applies pronunciation_hint before the lexicon", () => {
+    expect(prepareTtsInput("af_heart", "Rakhi at Nguyen's", "Nguyen's -> Win's"))
+      .toBe("[Rakhi](/ɹˈɑki/) at Win's")
   })
 })

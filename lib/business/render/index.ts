@@ -7,7 +7,6 @@ import { dimensionsFor, OUTPUT_FPS } from "@/lib/business/render/dimensions"
 import { renderScene, renderPresenterScene, runFfmpeg } from "@/lib/business/render/scene"
 import { generatePresenterClip } from "@/lib/business/presenter"
 import { mixAudio, sceneOffsets } from "@/lib/business/render/audio-mix"
-import { renderWatermarkOutro, WATERMARK_OUTRO_SEC } from "@/lib/business/render/watermark"
 import { synthesize } from "@/lib/business/tts"
 import { resolveMusicSource } from "@/lib/business/music-catalog"
 import { qrTarget, writeQrPng } from "@/lib/business/render/qr"
@@ -202,7 +201,7 @@ export async function renderAd(
           // For non-scrapbook end_cards with no logo, we still need SOME
           // input for the -loop 1 path. Use a plain color asset generated
           // once at session start. scrapbook template ignores this.
-          sourceImagePath = await ensureBlankBackground(workDir, dims.width, dims.height)
+          sourceImagePath = await ensureBlankBackground(workDir, dims.width, dims.height, paletteBg)
         }
       } else {
         const path = assets.imagePaths.get(scene.asset_id)
@@ -245,17 +244,13 @@ export async function renderAd(
     }
     rlog("phase4 concat done")
 
-    // ── 5. Watermark outro ─────────────────────────────────────────────────
-    const outroPath = join(workDir, "outro.mp4")
-    await renderWatermarkOutro(dims.width, dims.height, assets.captionFontPath, outroPath)
+    // The full-screen "Made with AtVe" outro card is gone (post-mortem: the
+    // customer's audience saw OUR brand get the last frame). The credit is
+    // now a small corner line on the end card (endCardStack).
+    const silentVideoPath = combinedScenesPath
 
-    // Concat scenes + outro into the final silent video.
-    const silentVideoPath = join(workDir, "silent_final.mp4")
-    await concatHardCut([combinedScenesPath, outroPath], silentVideoPath)
-    rlog("phase5 outro+concat done")
-
-    // ── 6. Audio: TTS + music + duck + loudnorm ─────────────────────────────
-    const totalVideoSec = totalScenesSec + WATERMARK_OUTRO_SEC
+    // ── 5. Audio: TTS + music + duck + loudnorm ─────────────────────────────
+    const totalVideoSec = totalScenesSec
     const voClips = voResults.map((r, i) => {
       if (!r) return null
       let offset = sceneOffsets(sceneDurations)[i]
@@ -323,11 +318,13 @@ export async function renderAd(
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-async function ensureBlankBackground(workDir: string, width: number, height: number): Promise<string> {
+// Fallback end-card ground when no logo exists. Brand/palette color, not
+// charcoal — the flat dark card read as unfinished (customer ad post-mortem).
+async function ensureBlankBackground(workDir: string, width: number, height: number, bgHex: string): Promise<string> {
   const path = join(workDir, "_blank_bg.png")
   await runFfmpeg([
     "-y", "-v", "error",
-    "-f", "lavfi", "-i", `color=c=0x1C1917:s=${width}x${height}:d=1`,
+    "-f", "lavfi", "-i", `color=c=${bgHex}:s=${width}x${height}:d=1`,
     "-frames:v", "1",
     path,
   ])
