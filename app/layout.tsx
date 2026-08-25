@@ -42,18 +42,18 @@ export const metadata: Metadata = {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
+  // og/twitter titles intentionally omitted: they fall back to each page's
+  // resolved <title>, so the share cards can never disagree with the page
+  // or each other (C5 — the old static strings drifted from page titles).
   openGraph: {
     type: "website",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: `${SITE_NAME} — AI Cartoon Video Generator`,
     description: SITE_DESCRIPTION,
     images: [{ url: "/og-image.png", width: 1200, height: 630, alt: `${SITE_NAME} — turn your photo into a cartoon video` }],
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE_NAME} — AI Cartoon Video Generator`,
-    description: SITE_DESCRIPTION,
     images: ["/og-image.png"],
   },
 };
@@ -70,7 +70,7 @@ const organizationJsonLd = {
   name: SITE_NAME,
   url: SITE_URL,
   logo: `${SITE_URL}/og-image.png`,
-  sameAs: ["https://dev.to/kkjcodes"],
+  sameAs: [BRAND.socialHandles.devto, BRAND.socialHandles.github],
 };
 
 const websiteJsonLd = {

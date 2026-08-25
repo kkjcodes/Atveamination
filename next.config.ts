@@ -36,6 +36,17 @@ const nextConfig: NextConfig = {
       "node_modules/.cache/**",
     ],
   },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // HSTS — the site is HTTPS-only behind the container ingress.
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+        ],
+      },
+    ]
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "replicate.delivery" },

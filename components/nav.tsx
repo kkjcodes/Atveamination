@@ -37,6 +37,9 @@ export default function Nav({ breadcrumbs }: { breadcrumbs?: Crumb[] }) {
           )}
           {status === "unauthenticated" && (
             <>
+              <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+                <Link href="/examples">Examples</Link>
+              </Button>
               <Button asChild variant="ghost" size="sm">
                 <Link href="/auth/login">Sign In</Link>
               </Button>

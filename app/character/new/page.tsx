@@ -108,6 +108,28 @@ export default function NewCharacterPage() {
     setPhotoPreview(URL.createObjectURL(file))
   }, [])
 
+  // Demo carryover (task B1): a visitor who tried the no-signup cartoon demo
+  // arrives here as /character/new?demo=<id> after signing up — prefill their
+  // photo so they never re-upload. Expired demos (swept after 24h) fail
+  // quietly into the normal empty picker.
+  useEffect(() => {
+    const demoId = new URLSearchParams(window.location.search).get("demo")
+    if (!demoId || !/^[0-9a-f-]{36}$/.test(demoId)) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`/api/try/${demoId}`)
+        if (!res.ok || cancelled) return
+        const blob = await res.blob()
+        const file = new File([blob], "your-photo.jpg", { type: "image/jpeg" })
+        onFileDrop(file)
+      } catch {
+        // Quiet fallback — the picker still works normally.
+      }
+    })()
+    return () => { cancelled = true }
+  }, [onFileDrop])
+
   const onDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
   }, [])

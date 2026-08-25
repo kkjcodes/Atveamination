@@ -8,9 +8,9 @@ import { useState, useRef } from "react"
 import { BRAND } from "@/config/brand"
 
 const styles = [
-  { src: "/landing/image0.png", label: "Pixar · Anime · Ghibli · Chibi" },
-  { src: "/landing/image1.png", label: "Comic · Sketch · Watercolor · Claymation" },
-  { src: "/landing/image2.png", label: "Anime · Pixar · Sketch · Comic" },
+  { src: "/landing/styles-grid-1.png", label: "Pixar · Anime · Ghibli · Chibi" },
+  { src: "/landing/styles-grid-2.png", label: "Comic · Sketch · Watercolor · Claymation" },
+  { src: "/landing/styles-grid-3.png", label: "Anime · Pixar · Sketch · Comic" },
 ]
 
 const steps = [
@@ -126,7 +126,7 @@ export default function LandingPage() {
           <div className="p-4 space-y-3">
             <div className="relative overflow-hidden rounded-xl shadow-lg">
               <Image
-                src="/landing/Images.jpeg"
+                src="/landing/eight-styles-grid.jpg"
                 alt="One photo transformed into eight cartoon styles"
                 width={600}
                 height={680}
@@ -139,7 +139,7 @@ export default function LandingPage() {
             </div>
             <div className="relative overflow-hidden rounded-xl shadow-lg">
               <Image
-                src="/landing/Babu.png"
+                src="/landing/photo-to-character.png"
                 alt="Your photo transformed into your cartoon character"
                 width={720}
                 height={540}
@@ -167,7 +167,7 @@ export default function LandingPage() {
           <div className="grid gap-4 sm:grid-cols-4">
             {[
               { n: "10", label: "Scenes/day", sub: "Resets at midnight" },
-              { n: "20", label: "AI scripts/day", sub: "Claude writes your story" },
+              { n: "20", label: "AI scripts/day", sub: "We write your story from one line" },
               { n: "10", label: "Characters for life", sub: "Train once, use forever" },
               { n: "8",  label: "Cartoon styles", sub: "Pick what you love" },
             ].map(({ n, label, sub }) => (
@@ -198,7 +198,7 @@ export default function LandingPage() {
 
           <div className="grid gap-5 sm:grid-cols-3">
             {[
-              { emoji: "👨‍👩‍👧", title: "Families", desc: "Mum, dad, and the kids in one animated adventure. Pick a preset scene or let AI write it." },
+              { emoji: "👨‍👩‍👧", title: "Families", desc: "Mom, dad, and the kids in one animated adventure. Pick a preset scene or let AI write it." },
               { emoji: "💑",     title: "Couples",  desc: "A surprise cartoon for your anniversary, birthday, or just because. They'll love it." },
               { emoji: "🫂",     title: "Friends",  desc: "The whole friend group in a birthday video, a holiday memory, or a totally random adventure." },
             ].map(({ emoji, title, desc }) => (
@@ -233,12 +233,12 @@ export default function LandingPage() {
                 Featured
               </span>
             </div>
-            <VideoCard src="/landing/atharv_video.mp4" poster="/landing/atharv_poster.jpg" label="Watch" />
+            <VideoCard src="/landing/personal-example-1.mp4" poster="/landing/personal-example-1-poster.jpg" label="Watch" />
           </div>
 
           <div className="grid gap-6 sm:grid-cols-2">
-            <VideoCard src="/landing/shop.mp4"  poster="/landing/shop_poster.jpg"  label="Watch clip" />
-            <VideoCard src="/landing/video.mp4" poster="/landing/video_poster.jpg" label="Watch clip" />
+            <VideoCard src="/landing/personal-example-2.mp4"  poster="/landing/personal-example-2-poster.jpg"  label="Watch clip" />
+            <VideoCard src="/landing/personal-example-3.mp4" poster="/landing/personal-example-3-poster.jpg" label="Watch clip" />
           </div>
         </div>
       </section>

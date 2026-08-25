@@ -33,7 +33,7 @@ export default function HelpPage() {
               {
                 step: "3",
                 title: "Train your character",
-                body: "Your cartoon style image is used to train a personal AI model (LoRA) on Replicate. This takes 10–15 minutes. You can leave the page — training runs in the background and you'll see the status when you come back.",
+                body: "Your cartoon style image is used to train a personal AI model that learns your character's look. This takes 10–15 minutes. You can leave the page — training runs in the background and you'll see the status when you come back.",
               },
               {
                 step: "4",
@@ -85,7 +85,7 @@ export default function HelpPage() {
             {[
               {
                 q: "Why does scene 1 look different from the rest?",
-                a: "Scene 1 is generated using your trained LoRA model — it's the most accurate representation of your character. Scenes 2+ reference scene 1 as the style anchor, so slight variation is normal but drift is minimised.",
+                a: "Scene 1 is generated using your trained character model — it's the most accurate representation of your character. Scenes 2+ reference scene 1 as the style anchor, so slight variation is normal but drift is minimized.",
               },
               {
                 q: "The background looks too realistic — what should I do?",

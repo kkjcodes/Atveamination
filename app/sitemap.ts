@@ -14,6 +14,10 @@ export default function sitemap(): MetadataRoute.Sitemap {
   //     stable share slugs worth indexing.
   const pages: { path: string; changeFrequency: "daily" | "weekly" | "monthly"; priority: number }[] = [
     { path: "/", changeFrequency: "weekly", priority: 1.0 },
+    { path: "/try", changeFrequency: "weekly", priority: 0.9 },
+    { path: "/examples", changeFrequency: "weekly", priority: 0.8 },
+    { path: "/how-it-works", changeFrequency: "monthly", priority: 0.7 },
+    { path: "/about", changeFrequency: "monthly", priority: 0.4 },
     { path: "/personal", changeFrequency: "weekly", priority: 0.9 },
     { path: "/business", changeFrequency: "weekly", priority: 0.9 },
     { path: "/help", changeFrequency: "monthly", priority: 0.6 },

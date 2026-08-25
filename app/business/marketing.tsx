@@ -22,13 +22,14 @@ export default function BusinessMarketing() {
               For your business
             </p>
             <h1 className="text-4xl sm:text-5xl font-black tracking-tight leading-tight text-zinc-900">
-              Your cartoon self presents your business ad.
+              Give your business a mascot. It presents every ad you make.
             </h1>
             <p className="mt-5 text-lg text-zinc-600 max-w-lg">
-              Upload a few photos and a selfie. We write the script, and your
-              own cartoon character delivers it — voice, music, and captions,
-              sized for social media. No filming, no editing, no actors.
-              No fake humans pretending to be customers — a mascot your customers will recognize.
+              One selfie becomes your store&apos;s cartoon mascot — openly a
+              cartoon, honestly animated, recognizably you. It opens the ad and
+              speaks the script with voice, music, and captions, sized for
+              social media. No filming, no editing, no fake humans pretending
+              to be customers.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
@@ -106,7 +107,8 @@ export default function BusinessMarketing() {
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              { title: "AI-written script", desc: "Sonnet writes a scene-by-scene script tuned to your business and photos." },
+              { title: "Your own mascot", desc: "A cartoon character made from your selfie presents the ad — and fronts every ad you make after it." },
+              { title: "AI-written script", desc: "We write a scene-by-scene script tuned to your business and photos." },
               { title: "Voice-over", desc: "Pick from four preset voices — deep, warm, energetic, or calm." },
               { title: "Background music", desc: "Auto-picked from a licensed library that fits your template." },
               { title: "Sized for social", desc: "Choose 9:16 for reels, 1:1 for feeds, or 16:9 for landscape." },

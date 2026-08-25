@@ -2,6 +2,7 @@ import Link from "next/link"
 import type { Metadata } from "next"
 import Nav from "@/components/nav"
 import { HeroVideo } from "@/components/hero-video"
+import TryWidget from "@/components/try-widget"
 import { BRAND } from "@/config/brand"
 
 // Root landing = compact two-audience hub. Both segments (personal + business)
@@ -42,14 +43,11 @@ export default function LandingPage() {
       {/* ── Two-audience hub ──────────────────────────────────────────────── */}
       <section className="px-6 pb-20">
         <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-2">
-          {/* Personal card */}
+          {/* Personal card — the live demo IS the hero (task B2): a visitor
+              sees their own photo become a cartoon before we ask for anything. */}
           <div className="group flex flex-col overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm transition-shadow hover:shadow-lg">
-            {/* Placeholder — hero video pulled 2026-08-02, will restore later tonight */}
-            <div className="aspect-video bg-gradient-to-br from-violet-100 via-violet-50 to-purple-50 flex items-center justify-center">
-              <div className="text-center px-6">
-                <div className="text-4xl mb-3">🎬</div>
-                <p className="text-sm font-medium text-violet-700">Example video coming back soon</p>
-              </div>
+            <div className="border-b border-violet-100 bg-violet-50/40 p-5">
+              <TryWidget compact />
             </div>
             <div className="flex flex-1 flex-col p-6">
               <p className="text-xs font-bold uppercase tracking-widest text-violet-500 mb-2">
@@ -120,6 +118,56 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Style proof strip — real outputs, all from ONE photo ──────────── */}
+      <section className="px-6 pb-16">
+        <div className="mx-auto max-w-6xl">
+          <p className="text-center text-sm font-semibold text-zinc-800">
+            One photo. Eight styles. The same person in every one.
+          </p>
+          <p className="mt-1 text-center text-xs text-zinc-500">
+            Every image below was generated on the platform from a single uploaded photo.
+          </p>
+          <div className="mt-6 grid grid-cols-4 gap-2 sm:gap-3 md:grid-cols-8">
+            {[
+              { f: "pixar", label: "Pixar 3D" },
+              { f: "anime", label: "Anime" },
+              { f: "ghibli", label: "Ghibli" },
+              { f: "chibi", label: "Chibi" },
+              { f: "comic", label: "Comic" },
+              { f: "sketch", label: "Sketch" },
+              { f: "watercolor", label: "Watercolor" },
+              { f: "claymation", label: "Claymation" },
+            ].map((s) => (
+              <figure key={s.f}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/marketing/styles/style-${s.f}.jpg`}
+                  alt={`The same person rendered in ${s.label} style`}
+                  loading="lazy"
+                  className="aspect-square w-full rounded-lg object-cover"
+                />
+                <figcaption className="mt-1 text-center text-[10px] text-zinc-500">{s.label}</figcaption>
+              </figure>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Photo trust block (task C4 — claims mirror the privacy policy) ── */}
+      <section className="px-6 pb-16">
+        <div className="mx-auto max-w-3xl rounded-2xl border border-zinc-200 bg-zinc-50 px-6 py-6 text-center">
+          <p className="text-sm font-semibold text-zinc-800">Your photos stay yours</p>
+          <div className="mx-auto mt-3 grid max-w-2xl gap-3 text-xs text-zinc-600 sm:grid-cols-3">
+            <p>Never used to train other people&apos;s models</p>
+            <p>Deleted within 30 days when you delete your account</p>
+            <p>Never sold, never used for advertising</p>
+          </div>
+          <p className="mt-3 text-xs text-zinc-400">
+            <Link href="/privacy" className="underline underline-offset-2 hover:text-zinc-600">Read the full privacy policy</Link>
+          </p>
+        </div>
+      </section>
+
       {/* ── Shared trust band ─────────────────────────────────────────────── */}
       <section className="border-y border-zinc-200 bg-zinc-50 px-6 py-10">
         <div className="mx-auto max-w-4xl grid gap-4 text-center sm:grid-cols-3">
@@ -140,10 +188,16 @@ export default function LandingPage() {
 
       <footer className="mt-auto border-t border-zinc-200 px-6 py-8 text-center text-sm text-zinc-400">
         <p>© {new Date().getFullYear()} {BRAND.productName}. All rights reserved.</p>
-        <p className="mt-2 flex items-center justify-center gap-4">
+        <p className="mt-2 flex flex-wrap items-center justify-center gap-4">
+          <Link href="/examples" className="hover:text-zinc-600 transition-colors">Examples</Link>
+          <Link href="/how-it-works" className="hover:text-zinc-600 transition-colors">How it works</Link>
+          <Link href="/about" className="hover:text-zinc-600 transition-colors">About</Link>
           <Link href="/privacy" className="hover:text-zinc-600 transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-zinc-600 transition-colors">Terms</Link>
           <Link href="/contact" className="hover:text-zinc-600 transition-colors">Contact</Link>
+        </p>
+        <p className="mt-2 text-xs">
+          <a href={`mailto:${BRAND.supportEmail}`} className="hover:text-zinc-600 transition-colors">{BRAND.supportEmail}</a> · We read every email.
         </p>
       </footer>
     </div>

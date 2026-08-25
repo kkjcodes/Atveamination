@@ -20,6 +20,13 @@ export async function uploadBlob(
   return blob.url
 }
 
+// Download a blob's bytes, or null if it doesn't exist.
+export async function downloadBlob(blobPath: string): Promise<Buffer | null> {
+  const blob = getClient().getContainerClient(containerName).getBlockBlobClient(blobPath)
+  if (!(await blob.exists())) return null
+  return blob.downloadToBuffer()
+}
+
 export async function deleteBlob(blobPath: string): Promise<void> {
   const client = getClient()
   const blob = client.getContainerClient(containerName).getBlockBlobClient(blobPath)
@@ -34,6 +41,28 @@ export async function deleteBlobsByPrefix(prefix: string): Promise<void> {
     deletes.push(container.getBlockBlobClient(item.name).deleteIfExists().then(() => {}))
   }
   await Promise.all(deletes)
+}
+
+// Deletes all blobs under `prefix` created more than `maxAgeMs` ago. Used by
+// the anonymous-demo sweep (demo uploads promise 24h retention). Runs
+// opportunistically, so it must never throw.
+export async function sweepPrefixOlderThan(prefix: string, maxAgeMs: number): Promise<number> {
+  try {
+    const container = getClient().getContainerClient(containerName)
+    const cutoff = Date.now() - maxAgeMs
+    const deletes: Promise<unknown>[] = []
+    for await (const item of container.listBlobsFlat({ prefix })) {
+      const created = item.properties.createdOn?.getTime() ?? 0
+      if (created > 0 && created < cutoff) {
+        deletes.push(container.getBlockBlobClient(item.name).deleteIfExists())
+      }
+    }
+    await Promise.all(deletes)
+    return deletes.length
+  } catch (e) {
+    console.error(`[storage] sweep ${prefix} failed: ${(e as Error).message}`)
+    return 0
+  }
 }
 
 // Extracts the blob path from an Azure Blob Storage URL.
