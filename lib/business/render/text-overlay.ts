@@ -1,3 +1,4 @@
+import { BRAND } from "@/config/brand"
 import type { AdScript, TextPosition } from "@/lib/business/adscript-schema"
 
 // ffmpeg drawtext requires escaping. Kept in one place so every template
@@ -117,7 +118,7 @@ export function endCardStack(
   const creditFont = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
   const creditSize = Math.max(14, Math.round(outHeight * 0.014))
   const creditY = outHeight - creditSize - Math.round(outHeight * 0.014)
-  const credit = `drawtext=text='made with atveanimation.com':${creditFont}:fontsize=${creditSize}:fontcolor=0xFFFFFF@0.45:x=(w-text_w)/2:y=${creditY}`
+  const credit = `drawtext=text='${BRAND.videoCredit}':${creditFont}:fontsize=${creditSize}:fontcolor=0xFFFFFF@0.45:x=(w-text_w)/2:y=${creditY}`
   return `${stack},${credit}`
 }
 

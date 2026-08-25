@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { PRESET_VOICES } from "@/lib/fal/client"
+import { PRESET_VOICES } from "@/lib/fal/voices"
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60)

@@ -3,8 +3,9 @@ import { prisma } from "@/lib/db/client"
 import bcrypt from "bcryptjs"
 import { randomBytes } from "crypto"
 import { timingSafeEqual } from "crypto"
+import { BRAND } from "@/config/brand"
 
-const ADMIN_EMAIL = "admin@atveanimation.com"
+const ADMIN_EMAIL = `admin@${BRAND.domain}`
 
 function generateOTP(): string {
   return Array.from({ length: 4 }, () =>

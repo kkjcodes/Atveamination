@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/client"
+import { restoreSceneQuota } from "@/lib/limits"
 import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS, languageForVoice, kokoroSpeedForBudget } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
@@ -40,6 +41,18 @@ export async function POST(req: NextRequest) {
   const { id: predictionId, status, output } = body
 
   if (status === "failed" || status === "canceled") {
+    // Provider-side failure: the user's quota is restored for affected scenes
+    // (A3 — failures on our side never count against the daily limit).
+    const failedScenes = await prisma.scene.findMany({
+      where: {
+        OR: [
+          { imagePredictionId: predictionId, generationPhase: "image" },
+          { audioPredictionId: predictionId },
+        ],
+      },
+      select: { id: true },
+    })
+    await Promise.all(failedScenes.map((s) => restoreSceneQuota(s.id)))
     await Promise.all([
       prisma.scene.updateMany({
         where: { imagePredictionId: predictionId, generationPhase: "image" },

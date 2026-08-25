@@ -1,6 +1,7 @@
 import Link from "next/link"
 import Nav from "@/components/nav"
 import { HeroVideo } from "@/components/hero-video"
+import { BRAND } from "@/config/brand"
 
 // Public /business marketing content. Rendered by app/business/page.tsx
 // when the visitor is anonymous. Signed-in users see the workspace instead.
@@ -27,7 +28,7 @@ export default function BusinessMarketing() {
               Upload a few photos and a selfie. We write the script, and your
               own cartoon character delivers it — voice, music, and captions,
               sized for social media. No filming, no editing, no actors.
-              Only on AtVeAnimation.
+              No fake humans pretending to be customers — a mascot your customers will recognize.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
@@ -183,7 +184,7 @@ export default function BusinessMarketing() {
       </section>
 
       <footer className="mt-auto border-t border-zinc-200 px-6 py-8 text-center text-sm text-zinc-400">
-        <p>© {new Date().getFullYear()} AtVeAnimation. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} {BRAND.productName}. All rights reserved.</p>
         <p className="mt-2 flex items-center justify-center gap-4">
           <Link href="/privacy" className="hover:text-zinc-600 transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-zinc-600 transition-colors">Terms</Link>

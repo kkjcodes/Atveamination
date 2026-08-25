@@ -6,8 +6,9 @@ import { replicate, MODELS, STYLE_HINTS, characterTriggerWord } from "@/lib/repl
 import { autoRetrainOnFal } from "@/lib/training/retrain"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { moderatePrompt } from "@/lib/ai/moderation"
-import { checkSceneLimit, logUsage } from "@/lib/limits"
+import { checkSceneLimit, logUsage, restoreSceneQuota } from "@/lib/limits"
 import { logError } from "@/lib/logger"
+import { isBudgetError } from "@/lib/budget/guard"
 
 async function toDataUri(url: string): Promise<string> {
   const res = await fetch(url)
@@ -301,6 +302,10 @@ CRITICAL constraints: exactly one of each named character in the cast, never mor
   } catch (err) {
     logError("/api/scenes/[id]/generate", "create_prediction", { sceneId: id, userId, characterId: character?.id ?? null, loraVersion: character?.loraVersion ?? null, orderIndex: scene.orderIndex }, err)
     await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } }).catch(() => {})
+    await restoreSceneQuota(id)
+    if (isBudgetError(err)) {
+      return NextResponse.json({ error: err.message }, { status: 503 })
+    }
     return NextResponse.json({ error: "Failed to start scene generation. Please try again." }, { status: 500 })
   }
 }

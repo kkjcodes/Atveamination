@@ -28,7 +28,7 @@ export default function HelpPage() {
               {
                 step: "2",
                 title: "Pick a cartoon style",
-                body: "Choose from Pixar 3D, anime, comic book, or pencil sketch. AtVeAnimation generates four cartoon versions of you — pick the one that looks most like you. This image becomes the visual anchor for all your videos.",
+                body: "Choose from Pixar 3D, anime, comic book, or pencil sketch. We generate four cartoon versions of you — pick the one that looks most like you. This image becomes the visual anchor for all your videos.",
               },
               {
                 step: "3",

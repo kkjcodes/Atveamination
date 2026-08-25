@@ -7,14 +7,15 @@ import Nav from "@/components/nav"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import BusinessMarketing from "./marketing"
+import { BRAND } from "@/config/brand"
 
 // Same URL serves marketing (anon) and workspace (auth), so metadata targets
 // the marketing pitch (that's the one Google crawls anyway — Googlebot is
 // always unauthenticated).
-// title.absolute bypasses the root layout's title.template ("· AtVeAnimation")
+// title.absolute bypasses the root layout's title.template ("· <product name>")
 // so we get a single clean title instead of a duplicated brand.
 export const metadata: Metadata = {
-  title: { absolute: "AI ad generator for small businesses — AtVeAnimation" },
+  title: { absolute: `AI ad generator for small businesses — ${BRAND.productName}` },
   description: "Turn photos of your work into a ready-to-post video ad. Script, voice-over, music, and sizing done for you. No filming or editing.",
   alternates: { canonical: "/business" },
   openGraph: {
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
 }
 
 // /business is auth-aware. Anonymous visitors see the public marketing page
-// (single URL for external ads: atveanimation.com/business). Authenticated
+// (single URL for external ads: <domain>/business). Authenticated
 // users see their workspace with draft/ready list. This lets us market the
 // short URL without forcing a signup wall before the pitch.
 //

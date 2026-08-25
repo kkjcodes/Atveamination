@@ -14,7 +14,9 @@ vi.mock("@/lib/db/client", () => ({
       findFirst: mockFindFirst,
       update: mockSceneUpdate,
       findUnique: mockSceneFindUnique,
+      findMany: vi.fn().mockResolvedValue([]),
     },
+    job: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
     scrapbookPage: {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       findFirst: vi.fn().mockResolvedValue(null),

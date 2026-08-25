@@ -2,6 +2,44 @@ import { fal } from "@fal-ai/client"
 
 fal.config({ credentials: process.env.FAL_KEY })
 
+// ── Budget guard enforcement (server-only, lazy-loaded) ────────────────────
+// Paid methods (subscribe, queue.submit) are patched to pass through the
+// global spend guard before the provider is called. Patching the SDK
+// singleton means every call path — including falAny below — is covered;
+// no call site can bypass the ceiling. The guard is dynamically imported so
+// this module stays safe to import from client components (PRESET_VOICES).
+// Free methods (queue.status, queue.result) are untouched.
+type GuardModule = typeof import("@/lib/budget/guard")
+async function guard(): Promise<GuardModule> {
+  return import("@/lib/budget/guard")
+}
+
+// Defensive: unit tests mock the SDK with partial shapes; only patch what exists.
+const rawSubscribe = typeof fal.subscribe === "function" ? fal.subscribe.bind(fal) : null
+const rawQueueSubmit = typeof fal.queue?.submit === "function" ? fal.queue.submit.bind(fal.queue) : null
+
+if (rawSubscribe) fal.subscribe = (async (model: string, opts: unknown) => {
+  const g = await guard()
+  await g.gateAndRecord("fal", model)
+  try {
+    return await (rawSubscribe as (m: string, o: unknown) => Promise<unknown>)(model, opts)
+  } catch (e) {
+    g.tripBreakerIfBalanceError(e)
+    throw e
+  }
+}) as typeof fal.subscribe
+
+if (rawQueueSubmit) fal.queue.submit = (async (model: string, opts: unknown) => {
+  const g = await guard()
+  await g.gateAndRecord("fal", model)
+  try {
+    return await (rawQueueSubmit as (m: string, o: unknown) => Promise<unknown>)(model, opts)
+  } catch (e) {
+    g.tripBreakerIfBalanceError(e)
+    throw e
+  }
+}) as typeof fal.queue.submit
+
 export { fal }
 
 export const FAL_MODELS = {
@@ -15,43 +53,6 @@ export const FAL_MODELS = {
   // into one scene. Used for shared multi-character scenes (no LoRA stacking).
   kontextMulti: "fal-ai/flux-pro/kontext/multi",
 } as const
-
-// Kokoro voice IDs are prefixed by language + gender: a=American English,
-// b=British English, e=Spanish, h=Hindi. `accent` stays for English voices so
-// the UI can still surface American/British distinction inside the language tab.
-export const PRESET_VOICES = [
-  // English (American)
-  { id: "af_heart",    label: "Aria",     description: "Warm & friendly",       gender: "female" as const, language: "en" as const, accent: "american" as const },
-  { id: "af_bella",    label: "Bella",    description: "Clear & articulate",    gender: "female" as const, language: "en" as const, accent: "american" as const },
-  { id: "af_nicole",   label: "Nicole",   description: "Soft & calming",        gender: "female" as const, language: "en" as const, accent: "american" as const },
-  { id: "af_sarah",    label: "Sarah",    description: "Upbeat & expressive",   gender: "female" as const, language: "en" as const, accent: "american" as const },
-  { id: "af_sky",      label: "Sky",      description: "Youthful & bright",     gender: "female" as const, language: "en" as const, accent: "american" as const },
-  { id: "am_adam",     label: "Adam",     description: "Conversational",         gender: "male"   as const, language: "en" as const, accent: "american" as const },
-  { id: "am_michael",  label: "Michael",  description: "Deep & authoritative",   gender: "male"   as const, language: "en" as const, accent: "american" as const },
-  // English (British)
-  { id: "bf_emma",     label: "Emma",     description: "Warm British accent",    gender: "female" as const, language: "en" as const, accent: "british"  as const },
-  { id: "bf_isabella", label: "Isabella", description: "Expressive & vivid",     gender: "female" as const, language: "en" as const, accent: "british"  as const },
-  { id: "bm_george",   label: "George",   description: "Formal & refined",       gender: "male"   as const, language: "en" as const, accent: "british"  as const },
-  { id: "bm_lewis",    label: "Lewis",    description: "Friendly & natural",     gender: "male"   as const, language: "en" as const, accent: "british"  as const },
-  // Hindi
-  { id: "hf_alpha",    label: "Aanya",    description: "Warm & clear",           gender: "female" as const, language: "hi" as const, accent: "indian"   as const },
-  { id: "hf_beta",     label: "Diya",     description: "Bright & expressive",    gender: "female" as const, language: "hi" as const, accent: "indian"   as const },
-  { id: "hm_omega",    label: "Arjun",    description: "Deep & grounded",        gender: "male"   as const, language: "hi" as const, accent: "indian"   as const },
-  { id: "hm_psi",      label: "Vikram",   description: "Conversational",         gender: "male"   as const, language: "hi" as const, accent: "indian"   as const },
-  // Spanish
-  { id: "ef_dora",     label: "Dora",     description: "Warm & friendly",        gender: "female" as const, language: "es" as const, accent: "spanish"  as const },
-  { id: "em_alex",     label: "Alex",     description: "Conversational",          gender: "male"   as const, language: "es" as const, accent: "spanish"  as const },
-  { id: "em_santa",    label: "Mateo",    description: "Deep & authoritative",    gender: "male"   as const, language: "es" as const, accent: "spanish"  as const },
-] as const
-
-export type PresetVoiceId = typeof PRESET_VOICES[number]["id"]
-export type VoiceLanguage = typeof PRESET_VOICES[number]["language"]
-
-export const SUPPORTED_LANGUAGES = [
-  { code: "en" as const, label: "English" },
-  { code: "hi" as const, label: "Hindi" },
-  { code: "es" as const, label: "Spanish" },
-] as const
 
 // Untyped subscribe/queue helpers for models whose SDK-side input shapes we
 // haven't verified yet (scrapbook pipeline is currently placeholder-model
@@ -72,25 +73,8 @@ export const falAny = {
   },
 }
 
-export function languageForVoice(voiceId: string | null | undefined): VoiceLanguage {
-  if (!voiceId) return "en"
-  const match = PRESET_VOICES.find((v) => v.id === voiceId)
-  return match?.language ?? "en"
-}
 
-// Kokoro's default speaking rate is ~2.5 words/sec for English (2.2 for Hindi/
-// Spanish). If a voice_script is wordier than the scene's target duration can
-// hold, speed it up to fit. Cap at 1.15× — beyond that starts sounding rushed.
-export function kokoroSpeedForBudget(
-  text: string,
-  targetSeconds: number,
-  language: string = "en",
-): number {
-  const wordsPerSecond = language === "en" ? 2.5 : 2.2
-  const words = text.trim().split(/\s+/).filter(Boolean).length
-  if (words === 0 || targetSeconds <= 0) return 1.0
-  const naturalSeconds = words / wordsPerSecond
-  const ratio = naturalSeconds / targetSeconds
-  if (ratio <= 1.0) return 1.0
-  return Math.min(1.15, ratio)
-}
+// Voice catalog + helpers moved to lib/fal/voices.ts (client-safe module);
+// re-exported here so existing server imports keep working.
+export { PRESET_VOICES, SUPPORTED_LANGUAGES, languageForVoice, kokoroSpeedForBudget } from "@/lib/fal/voices"
+export type { PresetVoiceId, VoiceLanguage } from "@/lib/fal/voices"

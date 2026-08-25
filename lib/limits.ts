@@ -3,12 +3,14 @@ import type { UserRole } from "@prisma/client"
 import type { EventName } from "@/lib/events"
 
 export const LIMITS = {
-  scenesPerDay: 10,           // ~$15/user/day worst case
+  scenesPerDay: 10,           // ~$5.50/user/day worst case
+  scenesPerMonth: 30,         // monthly ceiling on top of the daily cap (2026-08-25 policy)
   trainingPerUser: 10,        // lifetime LoRA runs; expensive ($5–10 each)
   briefsPerDay: 20,           // Haiku calls; cheap but guard against bots
   scrapbooksPerDay: 5,        // ~$2.50/user/day worst case (avg subtle route)
-  businessRendersPerMonth: 15,  // per BUSINESS-FORK-HANDOFF.md §M7
+  businessRendersPerMonth: 5,   // tightened from 15 (2026-08-25 policy)
   familyRendersPerMonth: 3,     // (family MP4 downloads, not scenes)
+  charactersPerMonth: 3,        // character setup is ~$2/click — the most expensive single action
   maxMonthlyModelCalls: Number(process.env.MAX_MONTHLY_MODEL_CALLS ?? 100_000),
 } as const
 
@@ -51,12 +53,39 @@ function nextMidnightUTC(): Date {
   return d
 }
 
+// Jobs whose generation failed on OUR side (provider error, timeout) are
+// marked status="provider_failed" and do not count against the user's
+// allowance — the failure wasn't theirs. Input rejections (moderation, bad
+// photo) return BEFORE logUsage, so they never consume quota in the first
+// place. (A3, 2026-08-25.)
+const QUOTA_STATUS_FILTER = { not: "provider_failed" }
+
 export async function checkSceneLimit(userId: string, role?: UserRole): Promise<LimitCheck> {
   if (isUnlimited(role)) return { allowed: true, used: 0, limit: Infinity, resetsAt: null }
-  const used = await prisma.job.count({
-    where: { userId, type: "scene_generate", createdAt: { gte: startOfTodayUTC() } },
+  const [usedToday, usedMonth] = await Promise.all([
+    prisma.job.count({
+      where: { userId, type: "scene_generate", status: QUOTA_STATUS_FILTER, createdAt: { gte: startOfTodayUTC() } },
+    }),
+    prisma.job.count({
+      where: { userId, type: "scene_generate", status: QUOTA_STATUS_FILTER, createdAt: { gte: startOfMonthUTC() } },
+    }),
+  ])
+  // The monthly ceiling caps the total; the daily cap smooths bursts. Report
+  // whichever is the binding constraint so the UI shows the right reset time.
+  if (usedMonth >= LIMITS.scenesPerMonth) {
+    return { allowed: false, used: usedMonth, limit: LIMITS.scenesPerMonth, resetsAt: nextMonthStartUTC() }
+  }
+  return { allowed: usedToday < LIMITS.scenesPerDay, used: usedToday, limit: LIMITS.scenesPerDay, resetsAt: nextMidnightUTC() }
+}
+
+// Character creation is the most expensive single click (~$2 of styles +
+// augmentation + describe). Capped monthly per the 2026-08-25 spend policy.
+export async function checkCharacterLimit(userId: string, role?: UserRole): Promise<LimitCheck> {
+  if (isUnlimited(role)) return { allowed: true, used: 0, limit: Infinity, resetsAt: null }
+  const used = await prisma.character.count({
+    where: { userId, createdAt: { gte: startOfMonthUTC() } },
   })
-  return { allowed: used < LIMITS.scenesPerDay, used, limit: LIMITS.scenesPerDay, resetsAt: nextMidnightUTC() }
+  return { allowed: used < LIMITS.charactersPerMonth, used, limit: LIMITS.charactersPerMonth, resetsAt: nextMonthStartUTC() }
 }
 
 export async function checkTrainingLimit(userId: string, role?: UserRole): Promise<LimitCheck> {
@@ -144,6 +173,17 @@ export async function killSwitchEngaged(): Promise<{ engaged: boolean; reason: s
     return { engaged: true, reason: `monthly model calls ${monthCalls} > cap ${LIMITS.maxMonthlyModelCalls}` }
   }
   return { engaged: false, reason: null }
+}
+
+// Mark a scene's quota job as provider-failed so it stops counting against
+// the user's daily/monthly allowance. Safe to call multiple times.
+export async function restoreSceneQuota(sceneId: string): Promise<void> {
+  await prisma.job.updateMany({
+    where: { entityId: sceneId, type: "scene_generate", status: { not: "provider_failed" } },
+    data: { status: "provider_failed" },
+  }).catch((e) => {
+    console.error(`[limits] restoreSceneQuota(${sceneId}) failed: ${(e as Error).message}`)
+  })
 }
 
 export async function logUsage(

@@ -1,11 +1,12 @@
 import type { Metadata } from "next"
+import { BRAND } from "@/config/brand"
 
 // Client-component pages can't export metadata directly. This layout
 // carries the per-route SEO overrides for /personal.
-// title.template in the root layout appends "· AtVeAnimation" — pass the
+// title.template in the root layout appends the product name — pass the
 // audience-specific string as { absolute: "..." } to bypass the template.
 export const metadata: Metadata = {
-  title: { absolute: "Cartoon videos starring you — AtVeAnimation" },
+  title: { absolute: `Cartoon videos starring you — ${BRAND.productName}` },
   description: "Upload a photo, pick a style, write a scene. Cartoon videos starring you and the people you love. Multi-character videos supported.",
   alternates: { canonical: "/personal" },
   openGraph: {

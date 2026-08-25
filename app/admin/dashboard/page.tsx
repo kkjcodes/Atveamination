@@ -6,6 +6,7 @@ import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend,
 } from "recharts"
+import { BRAND } from "@/config/brand"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ export default function AdminDashboard() {
       <div className="border-b border-zinc-200 bg-white px-8 py-5 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-zinc-900">Admin Dashboard</h1>
-          <p className="text-sm text-zinc-400">AtVeAnimation — internal metrics</p>
+          <p className="text-sm text-zinc-400">{BRAND.productName} — internal metrics</p>
         </div>
         <div className="flex gap-2">
           <Link href="/admin/metrics" className="rounded-lg border border-violet-200 px-4 py-2 text-sm font-medium text-violet-600 hover:bg-violet-50 transition">

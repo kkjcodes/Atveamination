@@ -1,5 +1,6 @@
 "use client"
 
+import { BRAND } from "@/config/brand"
 import Link from "next/link"
 import { Fragment } from "react"
 import { useSession, signOut } from "next-auth/react"
@@ -14,7 +15,7 @@ export default function Nav({ breadcrumbs }: { breadcrumbs?: Crumb[] }) {
     <header className="sticky top-0 z-50 border-b border-zinc-200 bg-white">
       <nav className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
         <Link href="/" className="text-xl font-black text-violet-600 tracking-tight">
-          AtVeAnimation
+          {BRAND.productName}
         </Link>
 
         <div className="flex items-center gap-3">
@@ -50,8 +51,13 @@ export default function Nav({ breadcrumbs }: { breadcrumbs?: Crumb[] }) {
       {breadcrumbs && breadcrumbs.length > 0 && (
         <div className="border-t border-zinc-100 bg-zinc-50 px-6 py-2">
           <div className="mx-auto flex max-w-6xl items-center gap-1.5 text-sm">
-            <Link href="/dashboard" className="text-zinc-400 hover:text-violet-600 transition-colors">
-              Dashboard
+            {/* Root crumb: app chrome (Dashboard) only for signed-in users —
+                public visitors on legal pages get a plain Home root. */}
+            <Link
+              href={status === "authenticated" ? "/dashboard" : "/"}
+              className="text-zinc-400 hover:text-violet-600 transition-colors"
+            >
+              {status === "authenticated" ? "Dashboard" : "Home"}
             </Link>
             {breadcrumbs.map((crumb, i) => (
               <Fragment key={i}>

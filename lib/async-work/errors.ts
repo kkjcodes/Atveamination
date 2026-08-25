@@ -1,3 +1,4 @@
+import { BRAND } from "@/config/brand"
 // Shared error taxonomy for every long-running operation in the app
 // (character augment/train, business render, scrapbook page/stitch,
 // future: music generation, custom-GPU inference).
@@ -49,7 +50,7 @@ function recognizeCommonHttpShape(e: unknown): UserFacingError | null {
       code: "quota_exceeded",
       message: "Our AI provider account is out of credits. This is on us — we're being notified.",
       savedState: "Your work is saved.",
-      nextAction: "Try again in an hour. If it keeps happening, email contact@atveanimation.com.",
+      nextAction: "Try again in an hour. If it keeps happening, email ${BRAND.supportEmail}.",
       retryable: true,
     }
   }
@@ -131,7 +132,7 @@ export function mapProviderError(e: unknown): UserFacingError {
     code: "internal",
     message: "Something went wrong on our end.",
     savedState: "Your work is saved.",
-    nextAction: "Try again in a moment. If it keeps happening, email contact@atveanimation.com.",
+    nextAction: "Try again in a moment. If it keeps happening, email ${BRAND.supportEmail}.",
     retryable: true,
   }
 }

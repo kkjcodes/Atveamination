@@ -1,8 +1,10 @@
 "use client"
 
+import { BRAND } from "@/config/brand"
+
 import { useState } from "react"
 
-const SHARE_TEXT = "I made this AI cartoon video with @AtVeAnimation!"
+const SHARE_TEXT = `I made this AI cartoon video with ${BRAND.shareHandle}!`
 
 export default function ShareButtons({ url, size = "default" }: { url: string; size?: "default" | "sm" }) {
   const [copied, setCopied] = useState(false)

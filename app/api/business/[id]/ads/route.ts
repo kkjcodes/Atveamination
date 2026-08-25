@@ -11,6 +11,7 @@ import {
 import { VOICES, type Voice } from "@/lib/business/adscript-schema"
 import { musicForFamily } from "@/lib/business/music-catalog"
 import { occasionById, occasionBrief } from "@/lib/business/occasions"
+import { isBudgetError } from "@/lib/budget/guard"
 import { isPresenterEligibleStyle } from "@/lib/business/presenter"
 import { emit } from "@/lib/events"
 import { killSwitchEngaged } from "@/lib/limits"
@@ -174,7 +175,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     },
   )
 
-  const result = await generateAdScript(input)
+  let result: Awaited<ReturnType<typeof generateAdScript>>
+  try {
+    result = await generateAdScript(input)
+  } catch (e) {
+    if (isBudgetError(e)) {
+      await prisma.ad.update({ where: { id: ad.id }, data: { status: "failed" } }).catch(() => {})
+      return NextResponse.json({ error: e.message }, { status: 503 })
+    }
+    throw e
+  }
   if (!result.ok) {
     console.error(`[adscript] ${ad.id} generation failed: ${JSON.stringify(result.errors)}`)
     await prisma.ad.update({

@@ -2,18 +2,19 @@ import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { AuthProvider } from "@/components/session-provider";
 import "./globals.css";
+import { BRAND } from "@/config/brand";
 
 const geist = Geist({ subsets: ["latin"] });
 
-const SITE_URL = "https://www.atveanimation.com";
-const SITE_NAME = "AtVeAnimation";
+const SITE_URL = BRAND.baseUrl;
+const SITE_NAME = BRAND.productName;
 const SITE_DESCRIPTION = "Turn your photo into a cartoon character that stars in your videos. Business video ads presented by your own cartoon spokesperson, and personal cartoon videos — made from your photos in minutes.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
-    default: "AtVeAnimation — AI Cartoon Video Generator",
-    template: "%s · AtVeAnimation",
+    default: `${SITE_NAME} — AI Cartoon Video Generator`,
+    template: `%s · ${SITE_NAME}`,
   },
   description: SITE_DESCRIPTION,
   applicationName: SITE_NAME,
@@ -26,7 +27,7 @@ export const metadata: Metadata = {
     "AI spokesperson",
     "cartoon presenter",
     "video ads from photos",
-    "AtVeAnimation",
+    SITE_NAME,
   ],
   authors: [{ name: "Kumar Krishnanand" }],
   creator: "Kumar Krishnanand",
@@ -45,13 +46,13 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     siteName: SITE_NAME,
-    title: "AtVeAnimation — AI Cartoon Video Generator",
+    title: `${SITE_NAME} — AI Cartoon Video Generator`,
     description: SITE_DESCRIPTION,
-    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "AtVeAnimation — turn your photo into a cartoon video" }],
+    images: [{ url: "/og-image.png", width: 1200, height: 630, alt: `${SITE_NAME} — turn your photo into a cartoon video` }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "AtVeAnimation — AI Cartoon Video Generator",
+    title: `${SITE_NAME} — AI Cartoon Video Generator`,
     description: SITE_DESCRIPTION,
     images: ["/og-image.png"],
   },

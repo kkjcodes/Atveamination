@@ -605,7 +605,7 @@ export default function BusinessAdGenerator({
 
         <div>
           <Label className="text-sm font-medium text-zinc-700 mb-1 block">
-            Presenter <span className="ml-1 rounded bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-700">Only on AtVeAnimation</span>
+            Presenter
           </Label>
           <p className="text-xs text-zinc-500 mb-2">
             Your cartoon character opens the ad and speaks the first line — lip-synced to the narration.

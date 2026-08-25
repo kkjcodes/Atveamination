@@ -1039,6 +1039,7 @@ function StudioContent() {
                   </div>
                   {sceneUsage.resetsAt && <p className="text-xs text-zinc-400">{formatReset(sceneUsage.resetsAt)}</p>}
                   {atLimit && <p className="text-xs text-red-600 font-medium pt-0.5">Limit reached</p>}
+                  <p className="text-xs text-zinc-400">Scenes that fail on our side don&apos;t count against your limit.</p>
                 </div>
               )}
             </div>

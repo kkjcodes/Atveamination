@@ -7,6 +7,7 @@ import { describeCharacter } from "@/lib/ai/describe"
 import { screenPublicFigure } from "@/lib/ai/likeness-screen"
 import sharp from "sharp"
 import { validateImageFile, UploadValidationError } from "@/lib/business/upload"
+import { checkCharacterLimit } from "@/lib/limits"
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -35,6 +36,14 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
+
+  const charLimit = await checkCharacterLimit(userId, session.user.role)
+  if (!charLimit.allowed) {
+    return NextResponse.json(
+      { error: `You've reached this month's limit of ${charLimit.limit} new characters. It resets at the start of next month.` },
+      { status: 429 },
+    )
+  }
 
   const formData = await req.formData()
   const file = formData.get("photo") as File | null

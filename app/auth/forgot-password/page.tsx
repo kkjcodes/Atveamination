@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { BRAND } from "@/config/brand"
 
 export default function ForgotPasswordPage() {
   const [email, setEmail]     = useState("")
@@ -50,7 +51,7 @@ export default function ForgotPasswordPage() {
                 <div role="status" className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                   <p className="font-medium">If that email exists, a reset link is on its way.</p>
                   <p className="mt-1 text-emerald-600 text-xs">
-                    If it doesn&apos;t arrive within a few minutes, check spam, verify the address, or email contact@atveanimation.com.
+                    If it doesn&apos;t arrive within a few minutes, check spam, verify the address, or email {BRAND.supportEmail}.
                   </p>
                 </div>
                 <Link href="/auth/login" className="text-sm text-violet-600 hover:underline">

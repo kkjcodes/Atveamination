@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/db/client"
 import { rateLimit } from "@/lib/rate-limit"
+import { validateEmailDomain } from "@/lib/auth/email-validation"
 
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown"
@@ -26,6 +27,23 @@ export async function POST(request: NextRequest) {
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return NextResponse.json({ error: "Valid email is required" }, { status: 400 })
+  }
+
+  // Domain must actually receive mail (MX) and not be a throwaway inbox.
+  // Internal E2E accounts (@atveanimation.test — a reserved TLD with no MX)
+  // bypass only when the request proves itself with the admin secret.
+  const isInternalTestSignup =
+    email.toLowerCase().endsWith("@atveanimation.test") &&
+    !!process.env.ADMIN_RESET_SECRET &&
+    request.headers.get("x-admin-secret") === process.env.ADMIN_RESET_SECRET
+  if (!isInternalTestSignup) {
+    const domainCheck = await validateEmailDomain(email)
+    if (!domainCheck.ok) {
+      return NextResponse.json(
+        { error: "That email address doesn't look reachable. Please use an email you can receive mail at." },
+        { status: 400 },
+      )
+    }
   }
 
   if (!password || password.length < 8) {

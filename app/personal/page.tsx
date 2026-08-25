@@ -5,6 +5,7 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import Nav from "@/components/nav"
 import { useState, useRef } from "react"
+import { BRAND } from "@/config/brand"
 
 const styles = [
   { src: "/landing/image0.png", label: "Pixar · Anime · Ghibli · Chibi" },
@@ -386,13 +387,13 @@ export default function LandingPage() {
             If there&apos;s something you&apos;d love to see, tell us.
           </p>
           <a
-            href="mailto:contact@atveanimation.com"
+            href={`mailto:${BRAND.supportEmail}`}
             className="mt-6 inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50 px-5 py-3 text-sm font-medium text-violet-700 hover:bg-violet-100 transition-colors"
           >
             <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
-            contact@atveanimation.com
+            {BRAND.supportEmail}
           </a>
           <p className="mt-3 text-xs text-zinc-400">We read every email.</p>
         </div>
@@ -421,7 +422,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-zinc-200 px-6 py-8 text-center text-sm text-zinc-400">
-        <p>© {new Date().getFullYear()} AtVeAnimation. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} {BRAND.productName}. All rights reserved.</p>
         <p className="mt-2 flex items-center justify-center gap-4">
           <Link href="/privacy" className="hover:text-zinc-600 transition-colors">Privacy Policy</Link>
           <Link href="/terms" className="hover:text-zinc-600 transition-colors">Terms of Use</Link>

@@ -4,6 +4,7 @@ import { randomBytes } from "crypto"
 import { sendEmail, passwordResetEmail } from "@/lib/email/client"
 import { rateLimit } from "@/lib/rate-limit"
 import { logError } from "@/lib/logger"
+import { BRAND } from "@/config/brand"
 
 const TOKEN_TTL_MS = 60 * 60 * 1000 // 1 hour
 
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
   const resetUrl = `${appUrl}/auth/reset-password?token=${token}`
 
   try {
-    await sendEmail(email, "Reset your AtVeAnimation password", passwordResetEmail(resetUrl))
+    await sendEmail(email, `Reset your ${BRAND.productName} password`, passwordResetEmail(resetUrl))
   } catch (e) {
     // High-visibility log to logger (structured, goes to Application
     // Insights / Container Apps stream). We can't surface to the client

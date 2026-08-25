@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { sendEmail } from "@/lib/email/client"
 import { rateLimit } from "@/lib/rate-limit"
 import { logError } from "@/lib/logger"
+import { BRAND } from "@/config/brand"
 
 const REASONS = new Set(["more_videos", "custom_style", "not_working", "other"])
 
@@ -65,11 +66,11 @@ export async function POST(req: NextRequest) {
   `
 
   try {
-    await sendEmail("contact@atveanimation.com", subject, html)
+    await sendEmail(BRAND.supportEmail, subject, html)
   } catch (e) {
     logError("/api/contact", "send", { email, reason }, e)
     return NextResponse.json(
-      { error: "We couldn't send your note. Try again in a moment, or email contact@atveanimation.com directly." },
+      { error: `We couldn't send your note. Try again in a moment, or email ${BRAND.supportEmail} directly.` },
       { status: 502 },
     )
   }

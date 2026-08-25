@@ -26,7 +26,7 @@ afterEach(() => {
 })
 
 describe("checkBusinessRenderLimit", () => {
-  it("allows when under 15/mo cap", async () => {
+  it("allows when under the monthly cap", async () => {
     mockEventCount.mockResolvedValue(3)
     const r = await checkBusinessRenderLimit("u1", "FREE")
     expect(r.allowed).toBe(true)
@@ -34,8 +34,8 @@ describe("checkBusinessRenderLimit", () => {
     expect(r.limit).toBe(LIMITS.businessRendersPerMonth)
   })
 
-  it("blocks at exactly 15", async () => {
-    mockEventCount.mockResolvedValue(15)
+  it("blocks at the cap", async () => {
+    mockEventCount.mockResolvedValue(LIMITS.businessRendersPerMonth)
     const r = await checkBusinessRenderLimit("u1", "FREE")
     expect(r.allowed).toBe(false)
   })
@@ -49,7 +49,7 @@ describe("checkBusinessRenderLimit", () => {
   })
 
   it("resets on the first of next month", async () => {
-    mockEventCount.mockResolvedValue(5)
+    mockEventCount.mockResolvedValue(2)
     const r = await checkBusinessRenderLimit("u1", "FREE")
     expect(r.resetsAt).toBeInstanceOf(Date)
     const d = r.resetsAt as Date

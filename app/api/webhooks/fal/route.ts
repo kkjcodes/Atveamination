@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/client"
+import { restoreSceneQuota } from "@/lib/limits"
 import { replicate, MODELS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
@@ -209,10 +210,12 @@ export async function POST(req: NextRequest) {
           generationFailureMessage: "The AI couldn't animate this scene. We fell back to a gentle still-photo motion.",
         },
       }),
-      prisma.scene.updateMany({
-        where: { videoPredictionId: requestId },
-        data: { generationPhase: "failed" },
-      }),
+      prisma.scene.findMany({ where: { videoPredictionId: requestId }, select: { id: true } })
+        .then((scenes) => Promise.all(scenes.map((s) => restoreSceneQuota(s.id))))
+        .then(() => prisma.scene.updateMany({
+          where: { videoPredictionId: requestId },
+          data: { generationPhase: "failed" },
+        })),
     ])
     void scrapMarked
     return NextResponse.json({ ok: true })

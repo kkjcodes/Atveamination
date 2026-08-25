@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import type { CharacterOption, JobStatus } from "@/types"
-import { PRESET_VOICES } from "@/lib/fal/client"
+import { PRESET_VOICES } from "@/lib/fal/voices"
 import { readJson, friendlyFetchError } from "@/lib/client/safe-json"
 
 const STYLES = ["pixar", "anime", "ghibli", "chibi", "comic", "sketch", "watercolor", "claymation"] as const

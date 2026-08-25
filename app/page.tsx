@@ -2,6 +2,7 @@ import Link from "next/link"
 import type { Metadata } from "next"
 import Nav from "@/components/nav"
 import { HeroVideo } from "@/components/hero-video"
+import { BRAND } from "@/config/brand"
 
 // Root landing = compact two-audience hub. Both segments (personal + business)
 // need a distinct pitch, timing, and proof — a shared page always defaulted
@@ -10,11 +11,11 @@ import { HeroVideo } from "@/components/hero-video"
 // visitors (auth-aware; see app/business/page.tsx).
 
 export const metadata: Metadata = {
-  title: { absolute: "AtVeAnimation — Turn photos into videos worth sharing" },
+  title: { absolute: `${BRAND.productName} — Turn photos into videos worth sharing` },
   description: "Two ways to make videos from your photos: cartoon videos for personal use, ready-to-post ads for your business.",
   alternates: { canonical: "/" },
   openGraph: {
-    title: "AtVeAnimation — Turn photos into videos worth sharing",
+    title: `${BRAND.productName} — Turn photos into videos worth sharing`,
     description: "Cartoon videos for personal use. Ready-to-post video ads for your business.",
     url: "/",
     images: ["/og-image.png"],
@@ -33,7 +34,7 @@ export default function LandingPage() {
             Turn photos into videos worth sharing.
           </h1>
           <p className="mt-4 text-lg text-zinc-500">
-            Two ways to use AtVeAnimation. Pick whichever fits your day.
+            Two ways to use {BRAND.productName}. Pick whichever fits your day.
           </p>
         </div>
       </section>
@@ -138,7 +139,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="mt-auto border-t border-zinc-200 px-6 py-8 text-center text-sm text-zinc-400">
-        <p>© {new Date().getFullYear()} AtVeAnimation. All rights reserved.</p>
+        <p>© {new Date().getFullYear()} {BRAND.productName}. All rights reserved.</p>
         <p className="mt-2 flex items-center justify-center gap-4">
           <Link href="/privacy" className="hover:text-zinc-600 transition-colors">Privacy</Link>
           <Link href="/terms" className="hover:text-zinc-600 transition-colors">Terms</Link>

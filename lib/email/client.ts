@@ -1,6 +1,7 @@
+import { BRAND } from "@/config/brand"
 import { EmailClient } from "@azure/communication-email"
 
-const FROM_ADDRESS = "AtVeAnimation <donotreply@atveanimation.com>"
+const FROM_ADDRESS = BRAND.emailFrom
 
 function getClient(): EmailClient {
   const conn = process.env.AZURE_COMMUNICATION_CONNECTION_STRING
@@ -34,7 +35,7 @@ export function passwordResetEmail(resetUrl: string): string {
         Or copy this link: ${resetUrl}
       </p>
       <hr style="border:none;border-top:1px solid #f4f4f5;margin:24px 0"/>
-      <p style="color:#a1a1aa;font-size:12px">AtVeAnimation · You are receiving this because a password reset was requested for your account.</p>
+      <p style="color:#a1a1aa;font-size:12px">${BRAND.productName} · You are receiving this because a password reset was requested for your account.</p>
     </div>
   `
 }
@@ -46,8 +47,8 @@ export function adminContactEmail(subject: string, body: string): string {
       <div style="color:#52525b;line-height:1.6;white-space:pre-wrap">${body}</div>
       <hr style="border:none;border-top:1px solid #f4f4f5;margin:24px 0"/>
       <p style="color:#a1a1aa;font-size:12px">
-        AtVeAnimation · You are receiving this because you have an account at atveanimation.com.<br/>
-        To stop receiving non-transactional emails, reply to this message or contact contact@atveanimation.com.
+        ${BRAND.productName} · You are receiving this because you have an account at ${BRAND.domain}.<br/>
+        To stop receiving non-transactional emails, reply to this message or contact ${BRAND.supportEmail}.
       </p>
     </div>
   `

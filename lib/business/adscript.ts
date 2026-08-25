@@ -1,5 +1,6 @@
 import { anthropic, VISION_MODEL } from "@/lib/ai/client"
 import { lexiconTerms } from "@/lib/business/pronunciation-lexicon"
+import { isBudgetError } from "@/lib/budget/guard"
 import { parseVisionJson } from "@/lib/scrapbook/vision-parse"
 import {
   MOTIONS,
@@ -160,6 +161,10 @@ export async function generateAdScript(input: AdScriptInput): Promise<AdScriptRe
   try {
     attempt = await callClaude(input, null)
   } catch (e) {
+    // Budget/capacity errors carry user-facing copy — propagate them intact
+    // so the route can return a proper capacity state instead of a generic
+    // "couldn't write your ad".
+    if (isBudgetError(e)) throw e
     return { ok: false, errors: [{ path: "$", message: `initial call failed: ${(e as Error)?.message}` }], lastAttempt: null }
   }
   let errors = validateAdScript(attempt, ctx)
@@ -169,6 +174,7 @@ export async function generateAdScript(input: AdScriptInput): Promise<AdScriptRe
   try {
     attempt = await callClaude(input, errors)
   } catch (e) {
+    if (isBudgetError(e)) throw e
     return { ok: false, errors: [{ path: "$", message: `repair call failed: ${(e as Error)?.message}` }], lastAttempt: attempt }
   }
   errors = validateAdScript(attempt, ctx)

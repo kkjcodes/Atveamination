@@ -4,6 +4,43 @@ export const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN!,
 })
 
+// ── Budget guard enforcement ───────────────────────────────────────────────
+// Paid methods (run, predictions.create) pass through the global spend guard.
+// Free reads (predictions.get, trainings.get, models.get) are untouched.
+// Lazy import keeps this module importable without pulling prisma anywhere
+// unexpected. See lib/budget/guard.ts for policy.
+async function guard() {
+  return import("@/lib/budget/guard")
+}
+
+// Defensive: unit tests mock the SDK with a bare class; only patch what exists.
+const rawRun = typeof replicate.run === "function" ? replicate.run.bind(replicate) : null
+const rawPredictionsCreate = typeof replicate.predictions?.create === "function"
+  ? replicate.predictions.create.bind(replicate.predictions)
+  : null
+
+if (rawRun) replicate.run = (async (model: string, opts: unknown) => {
+  const g = await guard()
+  await g.gateAndRecord("replicate", model)
+  try {
+    return await (rawRun as (m: string, o: unknown) => Promise<unknown>)(model, opts)
+  } catch (e) {
+    g.tripBreakerIfBalanceError(e)
+    throw e
+  }
+}) as typeof replicate.run
+
+if (rawPredictionsCreate) replicate.predictions.create = (async (opts: { model?: string; version?: string }) => {
+  const g = await guard()
+  await g.gateAndRecord("replicate", opts.model ?? opts.version ?? "unknown")
+  try {
+    return await (rawPredictionsCreate as (o: unknown) => Promise<unknown>)(opts)
+  } catch (e) {
+    g.tripBreakerIfBalanceError(e)
+    throw e
+  }
+}) as typeof replicate.predictions.create
+
 export const MODELS = {
   // Image generation - FLUX Kontext Pro for style transfer (preserves identity)
   fluxKontextPro: "black-forest-labs/flux-kontext-pro",

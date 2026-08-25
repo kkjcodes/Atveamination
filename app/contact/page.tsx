@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { BRAND } from "@/config/brand"
 
-// Contact form. Emails contact@atveanimation.com via /api/contact.
+// Contact form. Emails BRAND.supportEmail via /api/contact.
 // Deliberately not requiring auth — a prospective business owner should be
 // able to reach out without signing up first.
 
@@ -115,7 +116,7 @@ export default function ContactPage() {
 
                 {error && (
                   <p className="text-sm text-red-700 bg-red-50 rounded-lg px-3 py-2 border border-red-100">
-                    We couldn&apos;t send that. Try again, or email contact@atveanimation.com directly.
+                    We couldn&apos;t send that. Try again, or email {BRAND.supportEmail} directly.
                   </p>
                 )}
 
