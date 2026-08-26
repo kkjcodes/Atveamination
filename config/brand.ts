@@ -18,8 +18,8 @@ export const BRAND = {
   emailFrom: "AtVeAnimation <donotreply@atveanimation.com>",
   // Social share text handle.
   shareHandle: "@AtVeAnimation",
-  logoLight: "/logo-primary.svg",
-  logoDark: "/logo-primary.svg",
+  // No standalone logo asset yet — the wordmark is text. Add logo paths here
+  // when the rebrand (Phase R) produces real files.
   ogImage: "/og-image.png",
   tagline: "Turn photos into videos worth sharing.",
   socialHandles: {

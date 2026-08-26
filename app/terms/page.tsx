@@ -2,6 +2,13 @@ import Nav from "@/components/nav"
 import Link from "next/link"
 import { BRAND } from "@/config/brand"
 
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Terms of Use",
+  description: "The terms that govern your use of the service.",
+}
+
 const B = BRAND.productName
 
 export default function TermsPage() {

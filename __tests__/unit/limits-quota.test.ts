@@ -8,6 +8,7 @@ vi.mock("@/lib/db/client", () => ({
   prisma: {
     job: { count: (...a: unknown[]) => mockJobCount(...a), updateMany: (...a: unknown[]) => mockJobUpdateMany(...a) },
     character: { count: (...a: unknown[]) => mockCharacterCount(...a) },
+    user: { findUnique: vi.fn().mockResolvedValue({ createdAt: new Date("2026-01-01") }) },
     event: { count: vi.fn().mockResolvedValue(0) },
   },
 }))

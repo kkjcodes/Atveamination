@@ -86,10 +86,17 @@ function shortDay(iso: string) {
   return iso.slice(5) // "MM-DD"
 }
 
+type SpendData = {
+  summary: { todayUsd: number; monthUsd: number; dailyBudgetUsd: number; monthlyBudgetUsd: number; level: string; breaker: boolean }
+  byProvider: Array<{ provider: string; usd30d: number; calls30d: number }>
+  last7Days: Array<{ day: string; usd: number }>
+}
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
+  const [spend, setSpend] = useState<SpendData | null>(null)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -97,6 +104,10 @@ export default function AdminDashboard() {
       .then((r) => r.json())
       .then(setStats)
       .catch(() => setError("Failed to load stats"))
+    fetch("/api/admin/spend")
+      .then((r) => r.json())
+      .then(setSpend)
+      .catch(() => {})
   }, [])
 
   if (error) return <div className="p-10 text-red-600">{error}</div>
@@ -132,6 +143,32 @@ export default function AdminDashboard() {
       </div>
 
       <div className="mx-auto max-w-7xl space-y-10 px-8 py-10">
+
+        {/* ── Provider spend vs budget guard ── */}
+        {spend && (
+          <Section title="Provider spend (budget guard)">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <StatCard
+                label="Today"
+                value={`$${spend.summary.todayUsd.toFixed(2)}`}
+                sub={`of $${spend.summary.dailyBudgetUsd}/day · ${spend.summary.level}${spend.summary.breaker ? " · BREAKER ON" : ""}`}
+                color={spend.summary.level === "hard" ? "rose" : spend.summary.level === "soft" ? "amber" : "emerald"}
+              />
+              <StatCard
+                label="This Month"
+                value={`$${spend.summary.monthUsd.toFixed(2)}`}
+                sub={`of $${spend.summary.monthlyBudgetUsd}/month`}
+                color="violet"
+              />
+              {spend.byProvider.map((p) => (
+                <StatCard key={p.provider} label={`${p.provider} (30d)`} value={`$${p.usd30d.toFixed(2)}`} sub={`${p.calls30d.toLocaleString()} calls`} color="blue" />
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-zinc-400">
+              Last 7 days: {spend.last7Days.map((d) => `$${d.usd.toFixed(0)}`).join(" · ")}
+            </p>
+          </Section>
+        )}
 
         {/* ── Top KPIs — all products combined ── */}
         <Section title="Overview — all products">

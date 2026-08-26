@@ -10,6 +10,10 @@ const jobDeleteMock = vi.fn().mockResolvedValue({})
 
 vi.mock("@/lib/db/client", () => ({
   prisma: {
+    spendLedger: {
+      aggregate: vi.fn().mockResolvedValue({ _sum: { estimatedCostUsd: 0 } }),
+      create: vi.fn().mockResolvedValue({}),
+    },
     character: {
       findFirst: (...args: unknown[]) => findFirstMock(...args),
       updateMany: (...args: unknown[]) => updateManyMock(...args),

@@ -2,6 +2,13 @@ import Nav from "@/components/nav"
 import Link from "next/link"
 import { BRAND } from "@/config/brand"
 
+import type { Metadata } from "next"
+
+export const metadata: Metadata = {
+  title: "Privacy Policy",
+  description: "What we collect, how it's used, and the controls you have.",
+}
+
 const B = BRAND.productName
 
 export default function PrivacyPage() {
@@ -27,8 +34,8 @@ export default function PrivacyPage() {
           <h2 className="text-xl font-semibold text-zinc-800 border-b border-zinc-200 pb-2">1. Data We Collect</h2>
           <div className="space-y-3 text-sm text-zinc-600">
             <p><span className="font-medium text-zinc-800">Account data.</span> Your name and email address when you register.</p>
-            <p><span className="font-medium text-zinc-800">Photos.</span> The selfie you upload for cartoon generation. This image is stored in Azure Blob Storage and sent to Replicate for LoRA model training and to fal.ai for image-to-video generation.</p>
-            <p><span className="font-medium text-zinc-800">Voice recordings.</span> Short audio samples you record live via your browser microphone. The raw recording is stored in Azure Blob Storage linked to your account. When you generate a video scene, the recording is transmitted to Replicate to run the XTTS-v2 voice cloning model, which extracts vocal characteristics to synthesize speech. The raw recording is retained until you delete your character or account, at which point it is deleted from our Azure storage. We do not use voice recordings to build permanent biometric profiles or for any purpose outside of generating your videos.</p>
+            <p><span className="font-medium text-zinc-800">Photos.</span> The selfie you upload for cartoon generation. This image is stored in Azure Blob Storage and sent to Replicate for personal-model training and to fal.ai for image-to-video generation.</p>
+            <p><span className="font-medium text-zinc-800">Voice recordings.</span> Short audio samples you record live via your browser microphone. The raw recording is stored in Azure Blob Storage linked to your account. When you generate a video scene, the recording is transmitted to Replicate to run a voice-cloning model, which extracts vocal characteristics to synthesize speech. The raw recording is retained until you delete your character or account, at which point it is deleted from our Azure storage. We do not use voice recordings to build permanent biometric profiles or for any purpose outside of generating your videos.</p>
             <p><span className="font-medium text-zinc-800">Scene prompts.</span> Text descriptions you write for scenes. These are sent to Anthropic&rsquo;s Claude for optional AI brief generation and content moderation. No biometric data is sent to Anthropic.</p>
             <p><span className="font-medium text-zinc-800">Generated content.</span> Cartoon images, video clips, and final videos stored in Azure Blob Storage and linked to your account.</p>
             <p><span className="font-medium text-zinc-800">Session data.</span> We use session cookies to keep you logged in. We do not use advertising cookies or cross-site tracking.</p>
@@ -46,7 +53,7 @@ export default function PrivacyPage() {
           <div className="space-y-3 text-sm text-zinc-600">
             <p>The following third-party services process your data. <strong>By using {B} you acknowledge and accept that your data is transmitted to these services.</strong> {B} is not responsible for their independent data handling practices.</p>
             <ul className="list-disc pl-5 space-y-2">
-              <li><span className="font-medium text-zinc-800">Replicate (replicate.com)</span> — Image generation, LoRA training, voice cloning. Your training images, voice samples, and trained LoRA model weights are stored on Replicate&rsquo;s servers. When you delete your character, we send a best-effort deletion request to Replicate; however, we cannot guarantee or control Replicate&rsquo;s internal retention timelines.</li>
+              <li><span className="font-medium text-zinc-800">Replicate (replicate.com)</span> — Image generation, personal-model training, voice cloning. Your training images, voice samples, and trained model weights are stored on Replicate&rsquo;s servers. When you delete your character, we send a best-effort deletion request to Replicate; however, we cannot guarantee or control Replicate&rsquo;s internal retention timelines.</li>
               <li><span className="font-medium text-zinc-800">fal.ai</span> — Video generation. Generated images are transmitted to fal.ai for processing. Data is processed transiently and not permanently stored by fal.ai beyond their standard operational cache.</li>
               <li><span className="font-medium text-zinc-800">Microsoft Azure</span> — Hosts the application and stores all media files (photos, audio, generated videos). Data is stored in Azure Blob Storage.</li>
               <li><span className="font-medium text-zinc-800">Anthropic</span> — Scene text descriptions are processed by Claude for AI brief generation and content moderation. No photos or voice data are sent to Anthropic.</li>
@@ -58,7 +65,7 @@ export default function PrivacyPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold text-zinc-800 border-b border-zinc-200 pb-2">4. Biometric Data</h2>
           <div className="space-y-3 text-sm text-zinc-600">
-            <p>Photos of your face and live voice recordings may constitute biometric data under laws including BIPA (Illinois), the Texas CUBI Act, the Washington My Health MY Data Act, CCPA (California), and GDPR (EU/UK). Voice data is classified as a biometric identifier when an AI model extracts unique vocal characteristics — which is what XTTS-v2 does. By recording your voice and uploading your photo, you explicitly consent to the collection, processing, transmission, and retention of your vocal characteristics and facial data to the processors listed in Section 3, solely to provide the service.</p>
+            <p>Photos of your face and live voice recordings may constitute biometric data under laws including BIPA (Illinois), the Texas CUBI Act, the Washington My Health MY Data Act, CCPA (California), and GDPR (EU/UK). Voice data is classified as a biometric identifier when an AI model extracts unique vocal characteristics — which is what voice cloning does. By recording your voice and uploading your photo, you explicitly consent to the collection, processing, transmission, and retention of your vocal characteristics and facial data to the processors listed in Section 3, solely to provide the service.</p>
             <p><strong>Retention deadline.</strong> We do not retain raw biometric data permanently. Biometric data stored in our Azure systems will be permanently deleted within 30 days of an account or character deletion request. For Replicate-hosted model weights, we send a deletion request upon character deletion; actual deletion timing is subject to Replicate&rsquo;s policies, and {B} is not liable for their retention cycles beyond our best-effort request.</p>
             <p>We do not sell, license, or share biometric data with any party other than the processors listed in Section 3.</p>
           </div>

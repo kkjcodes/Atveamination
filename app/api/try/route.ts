@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateDemo, DEMO_STYLES, type DemoStyle } from "@/lib/demo/generate"
 import { validateImageFile, UploadValidationError } from "@/lib/business/upload"
 import { sweepPrefixOlderThan } from "@/lib/storage/client"
-import { isBudgetError } from "@/lib/budget/guard"
+import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 
 export const maxDuration = 60
 
@@ -11,6 +11,13 @@ export const maxDuration = 60
 // enforced in lib/demo/generate.ts and the provider adapters.
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown"
+
+  try {
+    await ensureKickoffBudget()
+  } catch (e) {
+    if (isBudgetError(e)) return NextResponse.json({ error: e.message }, { status: 503 })
+    throw e
+  }
 
   const formData = await req.formData().catch(() => null)
   const file = formData?.get("photo") as File | null

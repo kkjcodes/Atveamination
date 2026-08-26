@@ -11,7 +11,7 @@ import {
 import { VOICES, type Voice } from "@/lib/business/adscript-schema"
 import { musicForFamily } from "@/lib/business/music-catalog"
 import { occasionById, occasionBrief } from "@/lib/business/occasions"
-import { isBudgetError } from "@/lib/budget/guard"
+import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 import { isPresenterEligibleStyle } from "@/lib/business/presenter"
 import { emit } from "@/lib/events"
 import { killSwitchEngaged } from "@/lib/limits"
@@ -39,6 +39,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (kill.engaged) {
     void emit("kill_switch_tripped", { route: "adscript_generate", reason: kill.reason })
     return NextResponse.json({ error: "AI generation is temporarily paused." }, { status: 503 })
+  }
+
+  try {
+    await ensureKickoffBudget()
+  } catch (e) {
+    if (isBudgetError(e)) return NextResponse.json({ error: e.message }, { status: 503 })
+    throw e
   }
 
   const business = await prisma.business.findFirst({

@@ -8,6 +8,7 @@ import { screenPublicFigure } from "@/lib/ai/likeness-screen"
 import sharp from "sharp"
 import { validateImageFile, UploadValidationError } from "@/lib/business/upload"
 import { checkCharacterLimit } from "@/lib/limits"
+import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 
 export async function GET() {
   const session = await getServerSession(authOptions)
@@ -36,6 +37,13 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
+
+  try {
+    await ensureKickoffBudget()
+  } catch (e) {
+    if (isBudgetError(e)) return NextResponse.json({ error: e.message }, { status: 503 })
+    throw e
+  }
 
   const charLimit = await checkCharacterLimit(userId, session.user.role)
   if (!charLimit.allowed) {

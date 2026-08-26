@@ -4,6 +4,7 @@ import type { EventName } from "@/lib/events"
 
 export const LIMITS = {
   scenesPerDay: 10,           // ~$5.50/user/day worst case
+  scenesPerDayNewAccount: 5,  // accounts <24h old — bot blast-radius control (2026-08-25 policy)
   scenesPerMonth: 30,         // monthly ceiling on top of the daily cap (2026-08-25 policy)
   trainingPerUser: 10,        // lifetime LoRA runs; expensive ($5–10 each)
   briefsPerDay: 20,           // Haiku calls; cheap but guard against bots
@@ -62,20 +63,25 @@ const QUOTA_STATUS_FILTER = { not: "provider_failed" }
 
 export async function checkSceneLimit(userId: string, role?: UserRole): Promise<LimitCheck> {
   if (isUnlimited(role)) return { allowed: true, used: 0, limit: Infinity, resetsAt: null }
-  const [usedToday, usedMonth] = await Promise.all([
+  const [usedToday, usedMonth, user] = await Promise.all([
     prisma.job.count({
       where: { userId, type: "scene_generate", status: QUOTA_STATUS_FILTER, createdAt: { gte: startOfTodayUTC() } },
     }),
     prisma.job.count({
       where: { userId, type: "scene_generate", status: QUOTA_STATUS_FILTER, createdAt: { gte: startOfMonthUTC() } },
     }),
+    prisma.user.findUnique({ where: { id: userId }, select: { createdAt: true } }),
   ])
   // The monthly ceiling caps the total; the daily cap smooths bursts. Report
   // whichever is the binding constraint so the UI shows the right reset time.
   if (usedMonth >= LIMITS.scenesPerMonth) {
     return { allowed: false, used: usedMonth, limit: LIMITS.scenesPerMonth, resetsAt: nextMonthStartUTC() }
   }
-  return { allowed: usedToday < LIMITS.scenesPerDay, used: usedToday, limit: LIMITS.scenesPerDay, resetsAt: nextMidnightUTC() }
+  // Brand-new accounts (<24h) get a reduced first-day allowance — limits the
+  // blast radius of scripted signups without touching established users.
+  const isNewAccount = !!user && Date.now() - user.createdAt.getTime() < 24 * 60 * 60 * 1000
+  const dailyLimit = isNewAccount ? LIMITS.scenesPerDayNewAccount : LIMITS.scenesPerDay
+  return { allowed: usedToday < dailyLimit, used: usedToday, limit: dailyLimit, resetsAt: nextMidnightUTC() }
 }
 
 // Character creation is the most expensive single click (~$2 of styles +

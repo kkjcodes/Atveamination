@@ -8,7 +8,7 @@ import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { moderatePrompt } from "@/lib/ai/moderation"
 import { checkSceneLimit, logUsage, restoreSceneQuota } from "@/lib/limits"
 import { logError } from "@/lib/logger"
-import { isBudgetError } from "@/lib/budget/guard"
+import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 
 async function toDataUri(url: string): Promise<string> {
   const res = await fetch(url)
@@ -22,6 +22,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
+
+  try {
+    await ensureKickoffBudget()
+  } catch (e) {
+    if (isBudgetError(e)) return NextResponse.json({ error: e.message }, { status: 503 })
+    throw e
+  }
 
   const scene = await prisma.scene.findFirst({
     where: { id },

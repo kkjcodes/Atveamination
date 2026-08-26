@@ -8,6 +8,7 @@ import { checkTrainingLimit } from "@/lib/limits"
 import { logError } from "@/lib/logger"
 import { buildAndUploadZip } from "@/lib/training/retrain"
 import { claimAsyncWork, STALE_WINDOWS } from "@/lib/async-work/claim"
+import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 
 // POST /api/characters/[id]/train — kick off LoRA training on fal.
 //
@@ -20,6 +21,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
+
+  try {
+    await ensureKickoffBudget()
+  } catch (e) {
+    if (isBudgetError(e)) return NextResponse.json({ error: e.message }, { status: 503 })
+    throw e
+  }
 
   const [character, trainingLimit] = await Promise.all([
     prisma.character.findFirst({ where: { id, userId } }),

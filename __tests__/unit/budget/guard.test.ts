@@ -68,8 +68,8 @@ describe("gateAndRecord", () => {
     expect(arg.data.userId).toBe("u1")
   })
 
-  it("throws a friendly BudgetExceededError at the hard stop, no ledger row", async () => {
-    setSpend(guard.DAILY_BUDGET_USD, 10)
+  it("throws a friendly BudgetExceededError at the absolute stop, no ledger row", async () => {
+    setSpend(guard.DAILY_BUDGET_USD * 1.1, 10)
     await expect(guard.gateAndRecord("fal", "fal-ai/wan-i2v")).rejects.toThrow(/capacity/)
     expect(mockCreate).not.toHaveBeenCalled()
   })
@@ -78,6 +78,23 @@ describe("gateAndRecord", () => {
     setSpend(1, 10)
     mockCreate.mockRejectedValueOnce(new Error("db down"))
     await expect(guard.gateAndRecord("fal", "fal-ai/kokoro")).resolves.toBeUndefined()
+  })
+})
+
+describe("kickoff vs absolute thresholds", () => {
+  it("ensureKickoffBudget rejects at 100% of the ceiling", async () => {
+    setSpend(guard.DAILY_BUDGET_USD, 0)
+    await expect(guard.ensureKickoffBudget()).rejects.toThrow(/capacity/)
+  })
+
+  it("adapter gate still allows in-flight work in the 100-110% band", async () => {
+    setSpend(guard.DAILY_BUDGET_USD * 1.05, 0)
+    await expect(guard.gateAndRecord("fal", "fal-ai/kokoro")).resolves.toBeUndefined()
+  })
+
+  it("adapter gate hard-stops at 110%", async () => {
+    setSpend(guard.DAILY_BUDGET_USD * 1.1, 0)
+    await expect(guard.gateAndRecord("fal", "fal-ai/kokoro")).rejects.toThrow(/capacity/)
   })
 })
 
@@ -102,7 +119,7 @@ describe("circuit breaker", () => {
   })
 
   it("isBudgetError identifies guard errors", async () => {
-    setSpend(guard.DAILY_BUDGET_USD, 0)
+    setSpend(guard.DAILY_BUDGET_USD * 1.1, 0)
     try {
       await guard.gateAndRecord("fal", "fal-ai/kokoro")
       expect.unreachable()

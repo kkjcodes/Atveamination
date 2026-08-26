@@ -848,8 +848,8 @@ function SceneCard({ index, scene, disabled, characterId, onUpdate, onDelete, on
             </div>
             <div>
               <Label className="text-xs text-zinc-500 mb-1 block">Clip length</Label>
-              <p className="text-xs text-zinc-600 font-medium">~6 seconds</p>
-              <p className="text-xs text-zinc-400 mt-0.5">Longer clips coming soon</p>
+              <p className="text-xs text-zinc-600 font-medium">~6 seconds per scene</p>
+              <p className="text-xs text-zinc-400 mt-0.5">Add scenes to make longer videos</p>
             </div>
           </div>
         </div>

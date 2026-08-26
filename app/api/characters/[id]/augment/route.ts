@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { replicate, MODELS, CARTOON_STYLE_PROMPTS } from "@/lib/replicate/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
+import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 
 // Identity-anchoring suffix appended to every augmentation prompt.
 // Phrased non-enumeratively (same rationale as IDENTITY_DIRECTIVE in
@@ -77,6 +78,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const session = await getServerSession(authOptions)
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   const userId = session.user.id
+
+  try {
+    await ensureKickoffBudget()
+  } catch (e) {
+    if (isBudgetError(e)) return NextResponse.json({ error: e.message }, { status: 503 })
+    throw e
+  }
 
   const character = await prisma.character.findFirst({ where: { id, userId } })
   if (!character) return NextResponse.json({ error: "Character not found" }, { status: 404 })
