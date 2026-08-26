@@ -8,7 +8,9 @@ import { renderScene, renderPresenterScene, runFfmpeg } from "@/lib/business/ren
 import { generatePresenterClip } from "@/lib/business/presenter"
 import { mixAudio, sceneOffsets } from "@/lib/business/render/audio-mix"
 import { synthesize } from "@/lib/business/tts"
-import { resolveMusicSource } from "@/lib/business/music-catalog"
+import { resolveMusicSource, trackById } from "@/lib/business/music-catalog"
+import { snapDurationsToBeat, shouldSplitScene, contrastMotion } from "@/lib/business/render/pacing"
+import { splitCaption } from "@/lib/business/render/text-overlay"
 import { qrTarget, writeQrPng } from "@/lib/business/render/qr"
 import { dominantColorHex } from "@/lib/business/render/brand-color"
 
@@ -134,10 +136,14 @@ export async function renderAd(
 
     // ── 2. Derived per-scene durations ──────────────────────────────────────
     // Audio-first rule (doc §3): seconds = max(min_seconds, vo_dur + 0.5)
-    const sceneDurations = script.scenes.map((scene, i) => {
+    const rawDurations = script.scenes.map((scene, i) => {
       const voDur = voResults[i]?.durationSec ?? 0
       return Math.max(scene.min_seconds, voDur > 0 ? voDur + 0.5 : scene.min_seconds)
     })
+    // Beat snapping (P3): scene cuts land on the soundtrack's beat. Durations
+    // only grow (never cut narration), so audio offsets stay valid.
+    const musicTrack = await trackById(script.audio.music_id)
+    const sceneDurations = snapDurationsToBeat(rawDurations, musicTrack?.tags?.bpm ?? null)
     const totalScenesSec = sceneDurations.reduce((a, b) => a + b, 0)
 
     // ── 2b. Presenter clip (Phase C1) ───────────────────────────────────────
@@ -226,6 +232,32 @@ export async function renderAd(
       }
       if (i === presenterSceneIndex && presenterClipPath) {
         await renderPresenterScene({ ...sceneInput, clipPath: presenterClipPath })
+      } else if (
+        shouldSplitScene(scene.type, durationSec, false) &&
+        scene.type !== "end_card" &&
+        script.template_family !== "scrapbook"
+      ) {
+        // Scene splitting (P3): a long photo hold becomes two sub-shots of
+        // the same photo with contrasting motion — twice the cut rate, zero
+        // new assets. Narration/caption phrases land one per sub-shot.
+        const half = durationSec / 2
+        const [lineA, lineB] = splitCaption(sceneInput.captionText ?? "")
+        const partA = join(workDir, `scene_${i}_a.mp4`)
+        const partB = join(workDir, `scene_${i}_b.mp4`)
+        await renderScene({
+          ...sceneInput,
+          durationSec: half,
+          outputPath: partA,
+          captionText: sceneInput.captionText ? lineA : null,
+        })
+        await renderScene({
+          ...sceneInput,
+          scene: { ...scene, motion: contrastMotion(scene.motion) },
+          durationSec: durationSec - half,
+          outputPath: partB,
+          captionText: sceneInput.captionText ? (lineB ?? lineA) : null,
+        })
+        await concatHardCut([partA, partB], outPath)
       } else {
         await renderScene(sceneInput)
       }

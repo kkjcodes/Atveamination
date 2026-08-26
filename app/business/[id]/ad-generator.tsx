@@ -60,7 +60,7 @@ const WRITING_STEPS = [
   "Double-checking the details…",
 ]
 
-export type PickerPhoto = { id: string; url: string; uses: number }
+export type PickerPhoto = { id: string; url: string; uses: number; contentClass?: string | null }
 
 // CSS mock of the renderer's composition so users see what an overlay does to
 // THEIR photo before spending a render — mirrors lib/business/render/scene.ts:
@@ -225,8 +225,8 @@ export default function BusinessAdGenerator({
       const res = await fetch(`/api/business/${businessId}/photos`, { method: "POST", body: form })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(body?.error ?? "Couldn't upload those photos. Try again.")
-      const added: PickerPhoto[] = (body.photos ?? []).map((p: { id: string; url: string }) => ({
-        id: p.id, url: p.url, uses: 0,
+      const added: PickerPhoto[] = (body.photos ?? []).map((p: { id: string; url: string; contentClass?: string | null }) => ({
+        id: p.id, url: p.url, uses: 0, contentClass: p.contentClass ?? null,
       }))
       setPhotos((ps) => [...ps, ...added])
       // Auto-select what was just uploaded — that's why they added it.
@@ -352,6 +352,11 @@ export default function BusinessAdGenerator({
                   {idx >= 0 && (
                     <span className="absolute top-1.5 left-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-xs font-bold text-white shadow">
                       {idx + 1}
+                    </span>
+                  )}
+                  {p.contentClass && p.contentClass !== "photo" && (
+                    <span className="absolute inset-x-1 bottom-1 rounded bg-black/70 px-1.5 py-0.5 text-center text-[10px] leading-tight text-amber-200">
+                      {p.contentClass === "flyer" ? "Flyer — text used, not shown" : p.contentClass === "logo" ? "Logo — goes on the end card" : "Stock watermark visible"}
                     </span>
                   )}
                   {p.uses > 0 && (

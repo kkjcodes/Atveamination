@@ -106,6 +106,24 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Add at least one product photo first" }, { status: 400 })
   }
 
+  // Input gating (P2): flyers and logos never become scenes — a poster
+  // slow-zoomed for 7 seconds is unreadable at phone size and looks like a
+  // slideshow, not an ad. Flyer TEXT still makes it into the ad (fed to the
+  // script writer below as extra context). Watermarked stock stays usable
+  // but the picker warns about it. Null contentClass (pre-feature uploads)
+  // is treated as a photo.
+  const excluded = photos.filter((p) => p.contentClass === "flyer" || p.contentClass === "logo")
+  const flyerNotes = excluded
+    .filter((p) => p.contentClass === "flyer" && p.extractedText)
+    .map((p) => p.extractedText as string)
+  photos = photos.filter((p) => p.contentClass !== "flyer" && p.contentClass !== "logo")
+  if (photos.length === 0) {
+    return NextResponse.json(
+      { error: "Those images look like flyers or logos, which don't work well as video scenes. Add a few real photos of your work, products, or storefront — the flyer's message will still make it into the script." },
+      { status: 400 },
+    )
+  }
+
   const occasion = occasionById(typeof body.occasion === "string" ? body.occasion : null)
 
   // Cartoon presenter: only with narration, only on non-scrapbook templates,
@@ -168,7 +186,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       name: business.name,
       oneLiner: business.oneLiner,
       address: business.address,
-      notes: business.notes,
+      // Flyer text extracted at upload rides along as business context so the
+      // offer/dates on an excluded flyer still shape the script.
+      notes: [business.notes, ...flyerNotes.map((t) => `From the business's flyer: ${t}`)]
+        .filter(Boolean)
+        .join("\n") || null,
       logoAssetId: business.logoAssetId,
     },
     photoInputs,

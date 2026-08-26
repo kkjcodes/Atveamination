@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { uploadAssetFromFile, UploadValidationError } from "@/lib/business/upload"
+import { classifyUpload } from "@/lib/business/classify-upload"
 import { emit } from "@/lib/events"
 
 const MIN_PHOTOS = 1
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     )
   }
 
-  const uploaded = []
+  const uploaded: Awaited<ReturnType<typeof uploadAssetFromFile>>[] = []
   try {
     for (const file of files) {
       const asset = await uploadAssetFromFile(
@@ -64,6 +65,22 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     throw e
   }
+
+  // Classify each upload (photo/flyer/logo/watermarked) so the ad pipeline
+  // routes it correctly — a flyer slow-zoomed as a scene was the defining
+  // failure of the first customer ad. Cheap vision call; fails open to
+  // "photo" so a hiccup never blocks the upload.
+  const classified = await Promise.all(
+    files.map(async (file, i) => {
+      const buffer = Buffer.from(await file.arrayBuffer())
+      const c = await classifyUpload(buffer, file.type)
+      await prisma.asset.update({
+        where: { id: uploaded[i].id },
+        data: { contentClass: c.contentClass, extractedText: c.extractedText },
+      }).catch(() => {})
+      return { ...uploaded[i], contentClass: c.contentClass, extractedText: c.extractedText }
+    }),
+  )
   // Append at the end of the user's arranged order.
   const maxExisting = await prisma.asset.aggregate({
     where: {
@@ -80,7 +97,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   )
   void emit("photos_uploaded", { businessId, count: uploaded.length }, userId)
 
-  return NextResponse.json({ photos: uploaded }, { status: 201 })
+  return NextResponse.json({ photos: classified }, { status: 201 })
 }
 
 // PATCH /api/business/[id]/photos — persist a user-arranged photo order.

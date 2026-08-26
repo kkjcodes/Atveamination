@@ -74,6 +74,15 @@ model Asset {
   // All-zero (the default) falls back to createdAt order, so pre-existing
   // rows need no backfill.
   orderIndex Int       @default(0) @map("order_index")
+  // Vision classification of business uploads: "photo" | "flyer" | "logo" |
+  // "stock_watermarked". Null = unclassified (pre-feature rows; treated as
+  // photo). Flyers/logos are excluded from ad scenes — a poster slow-zoomed
+  // for 7 seconds was the defining failure of the first customer ad.
+  contentClass String? @map("content_class")
+  // For flyers: offer/date text extracted at classification time, fed into
+  // the ad script as business context so the flyer's message still lands —
+  // as native typography and narration instead of unreadable poster pixels.
+  extractedText String? @map("extracted_text")
   createdAt  DateTime  @default(now()) @map("created_at")
 
   user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)

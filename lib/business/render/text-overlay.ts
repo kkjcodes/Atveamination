@@ -172,6 +172,11 @@ export function captionFragment(
   // pill instead of the flat black box (post-mortem: the black band read as
   // unbranded). Null keeps the black-box look.
   accentHex: string | null = null,
+  // When the scene's duration is known and the caption splits into two
+  // phrases, each phrase shows during its half of the scene (P3: text that
+  // reveals in sync with the narration reads better and stays larger than
+  // two stacked lines competing for the frame).
+  durationSec: number | null = null,
 ): string {
   const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
   const lines = splitCaption(text)
@@ -180,6 +185,20 @@ export function captionFragment(
   const lineGap = Math.round(size * 0.45)
   const boxColor = accentHex ? `${accentHex}@0.88` : "0x00000080"
   const fontColor = accentHex && isLightHex(accentHex) ? "0x1A1A1A" : "0xFFFFFF"
+
+  // Phrase-timed reveal: two phrases, one bottom line, swapped mid-scene.
+  if (lines.length === 2 && durationSec && durationSec > 2) {
+    const y = outHeight - bottomReserved - margin - size
+    const mid = (durationSec / 2).toFixed(3)
+    const end = durationSec.toFixed(3)
+    return lines
+      .map((line, i) => {
+        const window = i === 0 ? `between(t,0,${mid})` : `between(t,${mid},${end})`
+        return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${size}:fontcolor=${fontColor}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=14:enable='${window}'`
+      })
+      .join(",")
+  }
+
   // Stack from the bottom up.
   return lines
     .map((line, i) => {
