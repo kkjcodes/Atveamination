@@ -35,6 +35,10 @@ export async function POST(req: NextRequest) {
       voiceId: voice_id ?? null,
       title: title ?? "Untitled Video",
       status: "pending",
+      // Preview-then-render (D4): new projects pause at each scene's cheap
+      // keyframe for approval before video dollars are spent. Existing
+      // projects keep their original immediate-animation flow.
+      previewApproval: true,
       language: lang,
       characters: {
         create: ids.map((id, i) => ({ characterId: id, orderIndex: i })),

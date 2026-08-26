@@ -112,7 +112,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   let scene = await prisma.scene.findFirst({
     where: { id },
     include: { project: { select: {
-      userId: true, characterId: true, voiceId: true, language: true,
+      userId: true, previewApproval: true, characterId: true, voiceId: true, language: true,
       characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } },
     } } },
   })
@@ -157,6 +157,27 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     if (imageFailed) {
       await prisma.scene.update({ where: { id }, data: { generationPhase: "failed" } })
+    } else if (keyframeUrl && scene.project.previewApproval) {
+      // Preview-then-render (D4): polling caught the keyframe before the
+      // webhook — same gate as the webhook path. Stop at image_ready; the
+      // /animate endpoint spends the video dollars after approval.
+      const imageUrl = await mirrorUrlToBlob(keyframeUrl, `scenes/${id}/frame.jpg`)
+      if (scene.orderIndex === 0) {
+        const projectId = scene.projectId
+        describeFirstFrame(imageUrl)
+          .then(async (desc) => {
+            if (desc) await prisma.project.update({ where: { id: projectId }, data: { firstFrameDescription: desc } })
+          })
+          .catch((e) => console.error("[scene/poll] firstFrame describe failed:", (e as Error)?.message))
+      }
+      await prisma.scene.updateMany({
+        where: { id, generationPhase: "image", videoPredictionId: null },
+        data: { imageUrl, generationPhase: "image_ready" },
+      })
+      scene = await prisma.scene.findFirst({
+        where: { id },
+        include: { project: { select: { userId: true, previewApproval: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
+      }) ?? scene
     } else if (keyframeUrl) {
       const charId = scene.focusCharacterId ?? scene.project.characterId
       // Voice: prefer the SPEAKER character's voice (separate field from focus —
@@ -293,7 +314,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
     scene = await prisma.scene.findFirst({
       where: { id },
-      include: { project: { select: { userId: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
+      include: { project: { select: { userId: true, previewApproval: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
     }) ?? scene
   }
 
@@ -421,7 +442,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
           scene = await prisma.scene.findFirst({
             where: { id },
-            include: { project: { select: { userId: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
+            include: { project: { select: { userId: true, previewApproval: true, characterId: true, voiceId: true, language: true, characters: { orderBy: { orderIndex: "asc" }, include: { character: { select: { id: true, name: true } } } } } } },
           }) ?? scene
         }
       }

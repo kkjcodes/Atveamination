@@ -265,6 +265,11 @@ model Project {
   voiceId               String?  @map("voice_id")
   title                 String   @default("Untitled Video")
   status                String   @default("pending")
+  // Preview-then-render (D4): when true, scene generation pauses after the
+  // cheap keyframe ("image_ready") until the user approves animation — the
+  // expensive video dollars are only spent on approved frames. Default false
+  // so existing projects keep their flow; new projects opt in at creation.
+  previewApproval       Boolean  @default(false) @map("preview_approval")
   finalVideoUrl         String?  @map("final_video_url")
   // Visual cues extracted from scene 0's keyframe via Claude vision.
   // Injected into prompts for scenes 1-N to keep clothing/hair/accessories

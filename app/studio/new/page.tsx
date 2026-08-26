@@ -28,7 +28,7 @@ type LocalScene = {
   description: string
   voiceScript: string
   durationSeconds: 5 | 10 | 15
-  status: JobStatus | "idle"
+  status: JobStatus | "idle" | "awaiting_approval"
   imageUrl: string | null
   videoClipUrl: string | null
   audioUrl: string | null
@@ -664,7 +664,7 @@ function StudioContent() {
       if (!res.ok) continue
       const { scene } = await res.json()
       if (scene.generation_phase === "failed") throw new Error("Scene generation failed")
-      if (scene.generation_phase === "done") return scene
+      if (scene.generation_phase === "done" || scene.generation_phase === "image_ready") return scene
     }
   }, [])
 
@@ -767,6 +767,12 @@ function StudioContent() {
       setSceneUsage((prev) => prev ? { ...prev, used: prev.used + 1 } : prev)
 
       const done = await pollScene(sceneId!)
+      if (done.generation_phase === "image_ready") {
+        // Preview-then-render (D4): the cheap keyframe is ready; the video
+        // spend waits for the user's approval on the scene card.
+        updateScene(index, { status: "awaiting_approval", imageUrl: done.image_url ?? null })
+        return "done"
+      }
       updateScene(index, {
         status: "succeeded",
         imageUrl: done.image_url ?? null,
@@ -779,6 +785,30 @@ function StudioContent() {
       return "failed"
     }
   }, [ensureProject, updateScene, pollScene, formatReset])
+
+  const approveScene = useCallback(async (index: number) => {
+    const scene = scenesRef.current[index]
+    if (!scene?.id) return
+    updateScene(index, { status: "processing" })
+    try {
+      const res = await fetch(`/api/scenes/${scene.id}/animate`, { method: "POST" })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setError((data as { error?: string }).error ?? `Couldn't animate scene ${index + 1}. Try again.`)
+        updateScene(index, { status: "awaiting_approval" })
+        return
+      }
+      const done = await pollScene(scene.id)
+      updateScene(index, {
+        status: "succeeded",
+        imageUrl: done.image_url ?? null,
+        videoClipUrl: done.video_clip_url ?? null,
+        audioUrl: done.audio_url ?? null,
+      })
+    } catch {
+      updateScene(index, { status: "failed" })
+    }
+  }, [updateScene, pollScene])
 
   const generateOne = useCallback(async (index: number) => {
     if (generating) return
@@ -1183,6 +1213,7 @@ function StudioContent() {
                 hasCharacter={hasCharacter}
                 onUpdate={(patch) => updateScene(index, patch)}
                 onDelete={() => deleteScene(index)}
+                onApprove={() => approveScene(index)}
                 onGenerate={() => generateOne(index)}
                 showDelete={scenes.length > 1}
               />
@@ -1259,11 +1290,12 @@ type SceneCardProps = {
   hasCharacter: boolean
   onUpdate: (patch: Partial<LocalScene>) => void
   onDelete: () => void
+  onApprove: () => void
   onGenerate: () => void
   showDelete: boolean
 }
 
-function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, onDelete, onGenerate, showDelete }: SceneCardProps) {
+function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, onDelete, onGenerate, onApprove, showDelete }: SceneCardProps) {
   const isProcessing = scene.status === "processing"
   const isDone = !!scene.videoClipUrl
   const isFailed = scene.status === "failed"
@@ -1291,6 +1323,9 @@ function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, on
           {scene.status === "pending" && (
             <span className="text-xs font-medium text-amber-600 bg-amber-50 rounded-full px-2 py-0.5">Queued</span>
           )}
+          {scene.status === "awaiting_approval" && (
+            <span className="text-xs font-medium text-violet-700 bg-violet-50 rounded-full px-2 py-0.5">Preview ready</span>
+          )}
           <div className="flex-1" />
           {showDelete && (
             <button
@@ -1304,6 +1339,30 @@ function SceneCard({ index, scene, disabled, atLimit, hasCharacter, onUpdate, on
             </button>
           )}
         </div>
+
+        {scene.status === "awaiting_approval" && scene.imageUrl && (
+          <div className="mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={scene.imageUrl} alt={`Scene ${index + 1} preview frame`} className="w-full rounded-lg border border-zinc-200 max-h-48 object-contain bg-zinc-50" />
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onApprove}
+                className="rounded-lg bg-violet-600 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-violet-700"
+              >
+                Looks good — animate it
+              </button>
+              <button
+                type="button"
+                onClick={onGenerate}
+                className="rounded-lg border border-zinc-300 px-4 py-2 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50"
+              >
+                Redo this frame
+              </button>
+              <span className="text-xs text-zinc-400">Animating is the long step — approve the frame first.</span>
+            </div>
+          </div>
+        )}
 
         {isDone && scene.videoClipUrl && (
           <div className="mb-3">
