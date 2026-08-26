@@ -9,6 +9,30 @@ import { tmpdir } from "os"
 import type { Voice } from "@/lib/business/adscript-schema"
 import { ffprobeBinary } from "@/lib/paths"
 import { synthesizeKokoro } from "@/lib/kokoro/synth"
+import { replicate } from "@/lib/replicate/client"
+
+// Fallback path: the same Kokoro model hosted on Replicate (P5). Only
+// invoked when the primary provider fails or times out. Version-pinned per
+// the model-migration rule; verified live 2026-08-26 (46 voices).
+// Two gaps in the fallback's voice list, handled explicitly:
+//   - af_heart (our warm_f default) → af_bella, the closest warm female.
+//   - Spanish voices (ef_/em_) aren't hosted there → no fallback, rethrow.
+const KOKORO_FALLBACK_MODEL =
+  "jaaari/kokoro-82m:f559560eb822dc509045f3921a1921234918b91739db4bf3daab2169b71c7a13"
+const FALLBACK_VOICE_MAP: Record<string, string> = { af_heart: "af_bella" }
+
+export async function synthesizeKokoroReplicate(voiceId: string, text: string): Promise<string> {
+  if (voiceId.startsWith("ef_") || voiceId.startsWith("em_")) {
+    throw new Error("no fallback voice available for this language")
+  }
+  const voice = FALLBACK_VOICE_MAP[voiceId] ?? voiceId
+  const output = await replicate.run(KOKORO_FALLBACK_MODEL as `${string}/${string}`, {
+    input: { text, voice, speed: 1.0 },
+  })
+  const url = Array.isArray(output) ? String(output[0]) : String(output)
+  if (!url || !url.startsWith("http")) throw new Error("fallback voice provider returned no audio")
+  return url
+}
 import { applyPronunciationLexicon } from "@/lib/business/pronunciation-lexicon"
 
 if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic)
@@ -118,11 +142,26 @@ export async function synthesize(voice: Voice, text: string, pronunciationHint?:
   // Bound the fal call. A congested Kokoro queue has left renders stuck at
   // phase-1 TTS indefinitely — better to fail the render with a retryable
   // error than sit in status="rendering" until the stale reclaim window.
-  const { audioUrl: rawUrl } = await withTimeout(
-    synthesizeKokoro(voiceId, ttsInput),
-    TTS_TIMEOUT_MS,
-    "The voice service is taking too long right now",
-  )
+  // P5: on fal failure/timeout, the SAME Kokoro model runs on Replicate as a
+  // fallback (fal's evening queue congestion has stalled renders twice).
+  // Same voice IDs, same text — the cache stays keyed on (engine, voice,
+  // text) so either source fills the same cache slot.
+  let rawUrl: string
+  try {
+    const r = await withTimeout(
+      synthesizeKokoro(voiceId, ttsInput),
+      TTS_TIMEOUT_MS,
+      "The voice service is taking too long right now",
+    )
+    rawUrl = r.audioUrl
+  } catch (primaryErr) {
+    console.warn(`[tts] primary voice provider failed (${(primaryErr as Error).message}) — trying fallback`)
+    rawUrl = await withTimeout(
+      synthesizeKokoroReplicate(voiceId, ttsInput),
+      60_000,
+      "The voice service is taking too long right now",
+    )
+  }
 
   const blobPath = `business/tts-cache/${hash}.wav`
   const audioUrl = await mirrorUrlToBlob(rawUrl, blobPath)

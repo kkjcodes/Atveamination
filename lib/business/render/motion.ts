@@ -16,6 +16,32 @@ import { OUTPUT_FPS } from "@/lib/business/render/dimensions"
 // Every filter chain is deterministic for a given (durationSec, width, height)
 // so re-renders of the same AdVersion produce byte-identical output.
 
+// 2.5D parallax (planned item shipped 2026-08-26): the blur-fill composite
+// already has two planes — a blurred cover background and the sharp photo in
+// front. Animating them at DIFFERENT zoom rates (fg 3x faster than bg) reads
+// as camera depth, the same trick as layered 2.5D tools, with zero new
+// dependencies and zero API cost. Used on the hero (first) scene.
+export function buildParallaxFilter(
+  durationSec: number,
+  outWidth: number,
+  outHeight: number,
+): string {
+  const frames = Math.max(1, Math.round(durationSec * OUTPUT_FPS))
+  const workW = Math.floor(outWidth / 2) * 2
+  const workH = Math.floor(outHeight / 2) * 2
+  const fillW = workW * 2
+  const fillH = workH * 2
+  return [
+    `trim=end_frame=1,split=2[px_bg][px_fg]`,
+    // Background plane: blurred cover, drifting slowly (1.0 → 1.04).
+    `[px_bg]scale=${fillW}:${fillH}:force_original_aspect_ratio=increase,crop=${fillW}:${fillH},boxblur=32:2,zoompan=z='min(1.0+0.04*on/${frames},1.04)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${workW}x${workH}:fps=${OUTPUT_FPS}[px_bgm]`,
+    // Foreground plane: sharp photo on a transparent canvas, zooming faster
+    // (1.0 → 1.12). The rate difference between planes is the depth cue.
+    `[px_fg]scale=${fillW}:${fillH}:force_original_aspect_ratio=decrease,format=rgba,pad=${fillW}:${fillH}:(ow-iw)/2:(oh-ih)/2:color=0x00000000,zoompan=z='min(1.0+0.12*on/${frames},1.12)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${workW}x${workH}:fps=${OUTPUT_FPS}[px_fgm]`,
+    `[px_bgm][px_fgm]overlay=0:0,setsar=1,scale=${outWidth}:${outHeight}`,
+  ].join(";")
+}
+
 export function buildMotionFilter(
   motion: Motion,
   durationSec: number,

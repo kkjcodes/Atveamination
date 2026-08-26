@@ -431,7 +431,7 @@ export default function AdDetailPage({ params }: { params: Promise<{ id: string 
           </Card>
 
           {/* Current script preview */}
-          {activeVersion && <ScriptPreview script={activeVersion.adScript} />}
+          {activeVersion && <ScriptPreview script={activeVersion.adScript} adId={adId} onSaved={refetch} />}
         </div>
 
         {/* Version sidebar */}
@@ -507,11 +507,49 @@ function StatusBadge({ status }: { status: Ad["status"] }) {
   )
 }
 
-function ScriptPreview({ script }: { script: AdScript }) {
+function ScriptPreview({ script, adId, onSaved }: { script: AdScript; adId: string; onSaved: () => void }) {
+  const [editing, setEditing] = useState<number | null>(null)
+  const [draftText, setDraftText] = useState("")
+  const [draftVo, setDraftVo] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  function startEdit(i: number) {
+    const s = script.scenes[i]
+    if (s.type === "end_card") return
+    setEditing(i)
+    setDraftText(s.text)
+    setDraftVo(s.vo_text)
+    setSaveError(null)
+  }
+
+  async function save(i: number) {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const res = await fetch(`/api/business/ads/${adId}/script`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ edits: [{ index: i, text: draftText, vo_text: draftVo }] }),
+      })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(body?.error ?? "Couldn't save that edit. Try again.")
+      setEditing(null)
+      onSaved()
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : "Couldn't save that edit. Try again.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <Card>
       <CardContent className="p-4">
-        <h3 className="text-sm font-semibold text-zinc-800 mb-3">Script</h3>
+        <div className="mb-3 flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-zinc-800">Script</h3>
+          <span className="text-xs text-zinc-400">Tap a scene to edit it, then re-render</span>
+        </div>
         <div className="space-y-2 text-sm">
           {script.scenes.map((s, i) => (
             <div key={i} className="flex gap-3 py-2 border-t border-zinc-100 first:border-t-0">
@@ -519,14 +557,49 @@ function ScriptPreview({ script }: { script: AdScript }) {
                 {s.type}
               </span>
               <div className="flex-1 min-w-0">
-                {s.type !== "end_card" && (
-                  <>
+                {s.type !== "end_card" && editing !== i && (
+                  <button type="button" onClick={() => startEdit(i)} className="block w-full rounded text-left hover:bg-zinc-50">
                     <p className="font-semibold text-zinc-900">{s.text}</p>
                     <p className="text-xs italic text-zinc-500 mt-0.5">&ldquo;{s.vo_text}&rdquo;</p>
                     {s.pronunciation_hint && (
                       <p className="text-xs text-amber-600 mt-0.5">say-as: {s.pronunciation_hint}</p>
                     )}
-                  </>
+                  </button>
+                )}
+                {s.type !== "end_card" && editing === i && (
+                  <div className="space-y-2">
+                    <div>
+                      <label className="text-xs text-zinc-500">On-screen text</label>
+                      <input
+                        value={draftText}
+                        onChange={(e) => setDraftText(e.target.value)}
+                        className="mt-0.5 w-full rounded border border-zinc-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-zinc-500">Narration</label>
+                      <textarea
+                        value={draftVo}
+                        onChange={(e) => setDraftVo(e.target.value)}
+                        rows={2}
+                        className="mt-0.5 w-full rounded border border-zinc-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                    {saveError && <p className="text-xs text-red-600" role="alert">{saveError}</p>}
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => save(i)}
+                        disabled={saving}
+                        className="rounded bg-violet-600 px-3 py-1 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                      >
+                        {saving ? "Saving…" : "Save"}
+                      </button>
+                      <button type="button" onClick={() => setEditing(null)} className="text-xs text-zinc-500 hover:underline">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
                 {s.type === "end_card" && (
                   <div className="space-y-0.5">

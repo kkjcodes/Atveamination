@@ -4,7 +4,7 @@ import { join } from "path"
 import { promises as fs } from "fs"
 import type { AdScript, TemplateFamily } from "@/lib/business/adscript-schema"
 import { OUTPUT_FPS } from "@/lib/business/render/dimensions"
-import { buildMotionFilter } from "@/lib/business/render/motion"
+import { buildMotionFilter, buildParallaxFilter } from "@/lib/business/render/motion"
 import {
   drawtextFragment,
   endCardStack,
@@ -44,6 +44,9 @@ export type SceneRenderInput = {
   contactStripText?: string | null
   // Pre-rendered QR PNG composited onto the end card's bottom-right corner.
   qrPngPath?: string | null
+  // Hero (first) scene renders with the 2.5D parallax composite instead of a
+  // flat zoompan — the two blur-fill planes move at different rates.
+  parallaxHero?: boolean
 }
 
 // End cards optionally composite a QR PNG bottom-right. One shared arg
@@ -83,7 +86,9 @@ function endCardFfmpegArgs(
 async function renderCleanModern(input: SceneRenderInput): Promise<void> {
   const { scene, sourceImagePath, durationSec, outputPath, width, height, captionFontPath, textPosition, paletteBgHex } = input
   const motion = scene.type === "end_card" ? "hold" : scene.motion
-  const motionFilter = buildMotionFilter(motion, durationSec, width, height)
+  const motionFilter = input.parallaxHero && scene.type !== "end_card"
+    ? buildParallaxFilter(durationSec, width, height)
+    : buildMotionFilter(motion, durationSec, width, height)
 
   if (scene.type === "end_card") {
     const stack = endCardStack(scene.lines, width, height, captionFontPath)
@@ -127,7 +132,9 @@ async function renderCleanModern(input: SceneRenderInput): Promise<void> {
 async function renderBoldPromo(input: SceneRenderInput): Promise<void> {
   const { scene, sourceImagePath, durationSec, outputPath, width, height, captionFontPath, paletteBgHex } = input
   const motion = scene.type === "end_card" ? "hold" : scene.motion
-  const motionFilter = buildMotionFilter(motion, durationSec, width, height)
+  const motionFilter = input.parallaxHero && scene.type !== "end_card"
+    ? buildParallaxFilter(durationSec, width, height)
+    : buildMotionFilter(motion, durationSec, width, height)
 
   // Band Y and height depend on textPosition; for bold_promo we always
   // place it in the lower-third for punch.

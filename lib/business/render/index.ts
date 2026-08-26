@@ -190,6 +190,8 @@ export async function renderAd(
 
     // ── 3. Render each scene video ──────────────────────────────────────────
     rlog("phase3 scene renders start")
+    // Hero scene (first content scene) gets the 2.5D parallax composite.
+    const firstContentIndex = script.scenes.findIndex((s) => s.type !== "end_card")
     const sceneVideos: string[] = []
     for (let i = 0; i < script.scenes.length; i++) {
       const sceneStart = Date.now()
@@ -229,6 +231,10 @@ export async function renderAd(
         captionText: captionsEnabled && scene.type !== "end_card" ? scene.vo_text ?? null : null,
         contactStripText: scene.type !== "end_card" ? contactStripText : null,
         qrPngPath: scene.type === "end_card" ? qrPngPath : null,
+        parallaxHero:
+          i === firstContentIndex &&
+          i !== presenterSceneIndex &&
+          script.template_family !== "scrapbook",
       }
       if (i === presenterSceneIndex && presenterClipPath) {
         await renderPresenterScene({ ...sceneInput, clipPath: presenterClipPath })
