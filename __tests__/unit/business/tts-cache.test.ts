@@ -38,6 +38,11 @@ vi.mock("fs", async () => {
   return { ...actual, promises: { ...actual.promises, writeFile: async () => {}, unlink: async () => {} } }
 })
 
+const mockReplicateRun = vi.fn()
+vi.mock("@/lib/replicate/client", () => ({
+  replicate: { run: (...a: unknown[]) => mockReplicateRun(...a) },
+}))
+
 const { synthesize, prepareTtsInput } = await import("@/lib/business/tts")
 
 // Prevent the network fetch — synthesize calls fetch(audioUrl) to probe.
@@ -114,11 +119,25 @@ describe("synthesize (TTS with cache)", () => {
     await expect(synthesize("robot_x" as unknown as "warm_f", "hi")).rejects.toThrow(/Unknown voice/)
   })
 
-  it("throws when fal returns no URL in any known shape", async () => {
+  it("falls back to the secondary provider when the primary fails (P5)", async () => {
     mockFindUnique.mockResolvedValue(null)
     mockFalSubscribe.mockResolvedValue({ data: { something_else: true } })
+    mockReplicateRun.mockResolvedValue(["https://replicate.example.com/fallback.wav"])
+    mockCreate.mockResolvedValue({})
 
-    await expect(synthesize("warm_f", "hi")).rejects.toThrow(/no audio URL/i)
+    const result = await synthesize("warm_f", "hi")
+    expect(result.cached).toBe(false)
+    // warm_f maps to af_heart, which the fallback model lacks → af_bella.
+    const input = (mockReplicateRun.mock.calls[0][1] as { input: { voice: string } }).input
+    expect(input.voice).toBe("af_bella")
+  })
+
+  it("throws when BOTH providers fail", async () => {
+    mockFindUnique.mockResolvedValue(null)
+    mockFalSubscribe.mockResolvedValue({ data: { something_else: true } })
+    mockReplicateRun.mockRejectedValue(new Error("fallback down"))
+
+    await expect(synthesize("warm_f", "hi")).rejects.toThrow()
   })
 })
 
