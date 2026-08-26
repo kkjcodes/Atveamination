@@ -25,11 +25,10 @@ export default function BusinessMarketing() {
               Give your business a mascot. It presents every ad you make.
             </h1>
             <p className="mt-5 text-lg text-zinc-600 max-w-lg">
-              One selfie becomes your store&apos;s cartoon mascot — openly a
-              cartoon, honestly animated, recognizably you. It opens the ad and
+              One selfie becomes your store&apos;s cartoon mascot — friendly,
+              recognizably you, and ready whenever you are. It opens the ad and
               speaks the script with voice, music, and captions, sized for
-              social media. No filming, no editing, no fake humans pretending
-              to be customers.
+              social media. No filming, no editing, no actors to hire.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
               <Link
@@ -128,11 +127,12 @@ export default function BusinessMarketing() {
       <section className="bg-orange-50 border-y border-orange-100 px-6 py-16">
         <div className="mx-auto max-w-4xl">
           <h2 className="text-center text-2xl sm:text-3xl font-bold text-zinc-900 mb-2">
-            Built for small businesses that don&apos;t have a video team
+            Your photos are already enough
           </h2>
           <p className="text-center text-zinc-600 mb-10 max-w-2xl mx-auto">
-            You have photos of your work. You need a video ad. You don&apos;t
-            want to learn video editing or pay $500 for a freelancer.
+            If you have photos of your work, you have everything a video ad
+            needs. We handle the script, the voice, and the editing — you get
+            a finished ad, ready to post.
           </p>
           <div className="grid gap-4 sm:grid-cols-3">
             {[

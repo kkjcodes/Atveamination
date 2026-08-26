@@ -101,7 +101,7 @@ export default function HelpPage() {
               },
               {
                 q: "Scene 1 audio didn't work — what happened?",
-                a: "Scene 1 generates image, video, and audio all at the same time, which can briefly hit Replicate's rate limit. The system retries automatically. If it fails after retries, scene 1 will be silent but subsequent scenes should have audio.",
+                a: "Scene 1 generates image, video, and audio all at the same time, so it occasionally needs a moment longer. The system retries automatically, and if audio still can't be added, the following scenes will have it.",
               },
             ].map(({ q, a }) => (
               <div key={q}>

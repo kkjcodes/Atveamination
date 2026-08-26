@@ -19,8 +19,8 @@ export default function AboutPage() {
           <p>
             {BRAND.productName} turns photos into cartoon videos. For families, that means
             videos starring you and the people you love. For small businesses, it means a
-            ready-to-post video ad presented by your own cartoon character — openly a cartoon,
-            never a fake human pretending to be a customer.
+            ready-to-post video ad presented by your own cartoon mascot — a character made
+            from your selfie that your customers come to recognize.
           </p>
           <p>
             The part we care most about is likeness: the cartoon should actually look like the
@@ -28,12 +28,10 @@ export default function AboutPage() {
             it&apos;s where most of our engineering goes.
           </p>
           <p>
-            What we are not: a stock-footage library, a deepfake tool, or a place where your
-            photos train anything other than your own characters. Photos are never sold, never
-            used for ads, and deleted within 30 days when you delete your account — the{" "}
-            <Link href="/privacy" className="underline underline-offset-2">privacy policy</Link>{" "}
-            has the details. {BRAND.productName} is an independent product and is not
-            affiliated with any animation studio or the AI providers whose models help power it.
+            Your photos are used for one thing: making your own characters and videos. They
+            stay yours, and they&apos;re deleted within 30 days when you delete your account —
+            the <Link href="/privacy" className="underline underline-offset-2">privacy policy</Link>{" "}
+            has the details. {BRAND.productName} is an independent product.
           </p>
           <p>
             Questions, ideas, or something broken? Email{" "}
