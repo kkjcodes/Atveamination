@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import Nav from "@/components/nav"
 import { BRAND } from "@/config/brand"
+import SiteFooter from "@/components/site-footer"
 
 export const metadata: Metadata = {
   title: "About",
@@ -50,6 +51,7 @@ export default function AboutPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   )
 }

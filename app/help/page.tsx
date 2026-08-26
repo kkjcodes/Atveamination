@@ -1,6 +1,7 @@
 import Nav from "@/components/nav"
 
 import type { Metadata } from "next"
+import SiteFooter from "@/components/site-footer"
 
 export const metadata: Metadata = {
   title: "Help",
@@ -10,7 +11,7 @@ export const metadata: Metadata = {
 export default function HelpPage() {
   return (
     <div className="min-h-screen bg-zinc-50">
-      <Nav breadcrumbs={[{ label: "Help" }]} />
+      <Nav />
 
       <div className="max-w-3xl mx-auto py-12 px-6 space-y-12">
         <div>
@@ -119,6 +120,7 @@ export default function HelpPage() {
           </div>
         </section>
       </div>
+      <SiteFooter />
     </div>
   )
 }

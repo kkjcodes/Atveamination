@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Nav from "@/components/nav"
 import TryWidget from "@/components/try-widget"
 import { BRAND } from "@/config/brand"
+import SiteFooter from "@/components/site-footer"
 
 export const metadata: Metadata = {
   title: "See yourself as a cartoon",
@@ -38,6 +39,7 @@ export default function TryPage() {
           </p>
         </div>
       </main>
+      <SiteFooter />
     </div>
   )
 }

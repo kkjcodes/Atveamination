@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import Nav from "@/components/nav"
+import SiteFooter from "@/components/site-footer"
 
 export const metadata: Metadata = {
   title: "How it works",
@@ -77,6 +78,7 @@ export default function HowItWorksPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   )
 }

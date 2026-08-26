@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import Nav from "@/components/nav"
 import { HeroVideo } from "@/components/hero-video"
+import SiteFooter from "@/components/site-footer"
 
 export const metadata: Metadata = {
   title: "Examples",
@@ -70,6 +71,7 @@ export default function ExamplesPage() {
           </Link>
         </div>
       </main>
+      <SiteFooter />
     </div>
   )
 }

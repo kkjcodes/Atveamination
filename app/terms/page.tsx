@@ -3,6 +3,7 @@ import Link from "next/link"
 import { BRAND } from "@/config/brand"
 
 import type { Metadata } from "next"
+import SiteFooter from "@/components/site-footer"
 
 export const metadata: Metadata = {
   title: "Terms of Use",
@@ -14,7 +15,7 @@ const B = BRAND.productName
 export default function TermsPage() {
   return (
     <div className="min-h-screen bg-zinc-50">
-      <Nav breadcrumbs={[{ label: "Terms of Use" }]} />
+      <Nav />
 
       <div className="max-w-3xl mx-auto py-12 px-6 space-y-10">
         <div>
@@ -195,6 +196,7 @@ export default function TermsPage() {
           <Link href="/privacy" className="text-sm text-violet-600 hover:underline">View Privacy Policy →</Link>
         </div>
       </div>
+      <SiteFooter />
     </div>
   )
 }

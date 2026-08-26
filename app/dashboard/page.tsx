@@ -11,6 +11,7 @@ import Nav from "@/components/nav"
 import { statusLabel } from "@/lib/copy"
 import DeleteButton from "@/components/delete-button"
 import ShareButtons from "@/components/share-buttons"
+import SiteFooter from "@/components/site-footer"
 
 type TrainingStatus = "pending" | "processing" | "succeeded" | "failed" | "canceled"
 
@@ -254,6 +255,7 @@ export default async function DashboardPage() {
           )}
         </section>
       </main>
+      <SiteFooter />
     </div>
   )
 }

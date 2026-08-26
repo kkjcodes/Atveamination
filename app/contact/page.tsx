@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { BRAND } from "@/config/brand"
+import SiteFooter from "@/components/site-footer"
 
 // Contact form. Emails BRAND.supportEmail via /api/contact.
 // Deliberately not requiring auth — a prospective business owner should be
@@ -51,7 +52,7 @@ export default function ContactPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <Nav breadcrumbs={[{ label: "Contact" }]} />
+      <Nav />
       <div className="mx-auto max-w-xl px-6 py-12">
         <h1 className="text-3xl font-bold text-zinc-900 mb-2">Talk to us</h1>
         <p className="text-zinc-500 mb-8">
@@ -133,6 +134,7 @@ export default function ContactPage() {
           </Card>
         )}
       </div>
+      <SiteFooter />
     </div>
   )
 }
