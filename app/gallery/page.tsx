@@ -16,7 +16,7 @@ export default async function GalleryPage({
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <Nav breadcrumbs={[{ label: "Gallery" }]} />
+      <Nav />
       <div className="mx-auto max-w-6xl px-6 py-10">
         <div className="mb-8">
           <p className="text-xs font-bold uppercase tracking-widest text-orange-700 mb-1">Gallery</p>

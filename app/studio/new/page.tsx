@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { GenerationLoader } from "@/components/generation-loader"
 import type { Character, JobStatus, Scene } from "@/types"
+import { trackEvent } from "@/lib/client/track"
 
 const MAX_SCENES = 100
 const MAX_CHARACTERS = 4
@@ -1095,6 +1096,7 @@ function StudioContent() {
             <div className="hidden md:flex items-center gap-3 shrink-0">
               {finalVideoUrl ? (
                 <a href={finalVideoUrl} target="_blank" rel="noopener noreferrer"
+                  onClick={() => trackEvent("download_clicked", { target: "studio" })}
                   className="inline-flex items-center justify-center h-10 px-4 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-colors">
                   Download Video
                 </a>
@@ -1120,6 +1122,7 @@ function StudioContent() {
 
             {finalVideoUrl && (
               <a href={finalVideoUrl} target="_blank" rel="noopener noreferrer"
+                onClick={() => trackEvent("download_clicked", { target: "studio" })}
                 className="md:hidden inline-flex items-center h-9 px-3 rounded-lg bg-green-600 text-white text-sm font-medium">
                 Download
               </a>

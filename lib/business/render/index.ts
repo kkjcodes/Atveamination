@@ -5,7 +5,7 @@ import { uploadBlob } from "@/lib/storage/client"
 import type { AdScript, PaletteHint } from "@/lib/business/adscript-schema"
 import { dimensionsFor, OUTPUT_FPS } from "@/lib/business/render/dimensions"
 import { renderScene, renderPresenterScene, runFfmpeg } from "@/lib/business/render/scene"
-import { generatePresenterClip } from "@/lib/business/presenter"
+import { generatePresenterClip, presenterSlotIndex } from "@/lib/business/presenter"
 import { mixAudio, sceneOffsets } from "@/lib/business/render/audio-mix"
 import { synthesize } from "@/lib/business/tts"
 import { resolveMusicSource, trackById } from "@/lib/business/music-catalog"
@@ -161,10 +161,8 @@ export async function renderAd(
     let presenterSceneIndex = -1
     let presenterClipPath: string | null = null
     if (options.presenter && voiceoverEnabled) {
-      const nonEnd = script.scenes
-        .map((s, i) => ({ s, i }))
-        .filter(({ s }) => s.type !== "end_card")
-      const slot = options.presenter.slot === "cta" ? nonEnd[nonEnd.length - 1] : nonEnd[0]
+      const slotIndex = presenterSlotIndex(script.scenes, options.presenter.slot)
+      const slot = slotIndex >= 0 ? { s: script.scenes[slotIndex], i: slotIndex } : undefined
       const vo = slot ? voResults[slot.i] : null
       const voText = slot && slot.s.type !== "end_card" ? slot.s.vo_text : null
       if (slot && vo && voText) {

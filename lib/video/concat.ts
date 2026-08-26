@@ -4,6 +4,7 @@ import { promises as fs } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 import { ffprobeBinary } from "@/lib/paths"
+import { BRAND } from "@/config/brand"
 
 if (ffmpegStatic) {
   ffmpeg.setFfmpegPath(ffmpegStatic)
@@ -240,6 +241,7 @@ export async function concatenateClips(clips: Clip[], outputPath: string): Promi
   const rawAudioPaths: (string | null)[] = []
   const mergedPaths: string[] = []
   const concatListPath = join(tmp, `${sessionId}_concat.txt`)
+  const concatOutPath = join(tmp, `${sessionId}_concat_out.mp4`)
 
   try {
     // 1. Download all video and audio files in parallel
@@ -279,6 +281,23 @@ export async function concatenateClips(clips: Clip[], outputPath: string): Promi
         .input(concatListPath)
         .inputOptions(["-f", "concat", "-safe", "0"])
         .outputOptions(["-c", "copy", "-movflags", "+faststart"])
+        .output(concatOutPath)
+        .on("error", reject)
+        .on("end", () => resolve())
+        .run()
+    })
+
+    // 4. Watermark pass (E1): a small corner credit on free personal output.
+    // Sized relative to frame height so it stays legible at feed size
+    // (~480px playback). Sourced from brand config so it survives rebrand.
+    await new Promise<void>((resolve, reject) => {
+      const wm = BRAND.videoCredit.replace(/:/g, "\\:").replace(/'/g, "")
+      ffmpeg(concatOutPath)
+        .outputOptions([
+          "-vf",
+          `drawtext=text='${wm}':font='sans':fontsize=h*0.026:fontcolor=white@0.55:box=1:boxcolor=black@0.25:boxborderw=6:x=w-text_w-16:y=h-text_h-14`,
+          "-c:a", "copy", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-movflags", "+faststart",
+        ])
         .output(outputPath)
         .on("error", reject)
         .on("end", () => resolve())
@@ -290,6 +309,7 @@ export async function concatenateClips(clips: Clip[], outputPath: string): Promi
       ...rawAudioPaths.filter(Boolean) as string[],
       ...mergedPaths,
       concatListPath,
+      concatOutPath,
     ]
     await Promise.all(toClean.map((p) => fs.unlink(p).catch(() => {})))
   }

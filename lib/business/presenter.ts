@@ -157,3 +157,18 @@ export async function generatePresenterClip(opts: {
   const clipUrl = await mirrorUrlToBlob(syncedUrl, `business/ads/${opts.adId}/presenter-${lineHash}.mp4`)
   return { clipUrl, keyframeUrl, lineHash }
 }
+
+
+// Which scene the presenter fronts (pure — pinned by unit tests; the CTA
+// slot had no dedicated coverage until 2026-08-26). "hook" = first content
+// scene, "cta" = last content scene; end cards are never presenter slots.
+export function presenterSlotIndex(
+  scenes: Array<{ type: string }>,
+  slot: "hook" | "cta",
+): number {
+  const nonEnd = scenes
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.type !== "end_card")
+  if (nonEnd.length === 0) return -1
+  return slot === "cta" ? nonEnd[nonEnd.length - 1].i : nonEnd[0].i
+}

@@ -133,7 +133,7 @@ describe("concatenateClips", () => {
     }
   })
 
-  it("calls ffmpeg N+1 times for N clips (N merges + 1 concat)", async () => {
+  it("calls ffmpeg N+2 times for N clips (N merges + concat + watermark pass)", async () => {
     vi.stubGlobal("fetch", makeFetchOk())
     autoResolveEnd()
 
@@ -144,7 +144,7 @@ describe("concatenateClips", () => {
     )
 
     // 2 merge calls + 1 concat call
-    expect(mockFfmpegFactory).toHaveBeenCalledTimes(3)
+    expect(mockFfmpegFactory).toHaveBeenCalledTimes(4)
     // Final concat uses -f concat demuxer
     expect(mockInputOptions).toHaveBeenCalledWith(expect.arrayContaining(["-f", "concat", "-safe", "0"]))
   })

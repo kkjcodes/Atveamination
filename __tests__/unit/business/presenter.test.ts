@@ -45,3 +45,24 @@ describe("generatePresenterClip cache", () => {
     expect(out.lineHash).toBe(lineHash)
   })
 })
+
+describe("presenterSlotIndex (hook vs CTA slot)", () => {
+  const scenes = [
+    { type: "hook" },
+    { type: "benefit" },
+    { type: "cta" },
+    { type: "end_card" },
+  ]
+  it("hook slot is the first content scene", async () => {
+    const { presenterSlotIndex } = await import("@/lib/business/presenter")
+    expect(presenterSlotIndex(scenes, "hook")).toBe(0)
+  })
+  it("cta slot is the LAST content scene, never the end card", async () => {
+    const { presenterSlotIndex } = await import("@/lib/business/presenter")
+    expect(presenterSlotIndex(scenes, "cta")).toBe(2)
+  })
+  it("end-card-only scripts have no slot", async () => {
+    const { presenterSlotIndex } = await import("@/lib/business/presenter")
+    expect(presenterSlotIndex([{ type: "end_card" }], "cta")).toBe(-1)
+  })
+})
