@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth/config"
 import { prisma } from "@/lib/db/client"
 import { emit } from "@/lib/events"
+import { STALE_WINDOWS } from "@/lib/async-work/claim"
 
 // GET /api/business/ads/[id] — ad + versions + resolved current render URL.
 // finalVideoUrl is looked up via currentVersion.renderAssetId so the URL
@@ -22,6 +23,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     },
   })
   if (!ad) return NextResponse.json({ error: "Not found" }, { status: 404 })
+
+  // Stale-render reaper (D3): a render whose worker died must reach a
+  // TERMINAL state, not sit at "rendering" forever. Twice the stale window
+  // (the window itself allows reclaim/retry) → hard-fail so the UI shows
+  // the retry button instead of an eternal spinner.
+  if (
+    ad.status === "rendering" &&
+    ad.renderStartedAt &&
+    Date.now() - ad.renderStartedAt.getTime() > STALE_WINDOWS.businessRender * 2
+  ) {
+    await prisma.ad.update({ where: { id: ad.id }, data: { status: "failed" } }).catch(() => {})
+    ad.status = "failed"
+    console.warn(`[ads] reaped stale render ${ad.id} (started ${ad.renderStartedAt.toISOString()})`)
+  }
 
   const currentVersion = ad.versions.find((v) => v.versionNo === ad.currentVersion)
   let finalVideoUrl: string | null = null
