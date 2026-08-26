@@ -7,6 +7,7 @@ import Nav from "@/components/nav"
 import { useState, useRef } from "react"
 import { BRAND } from "@/config/brand"
 import SiteFooter from "@/components/site-footer"
+import TrackView from "@/components/track-view"
 
 const styles = [
   { src: "/landing/styles-grid-1.png", label: "Pixar · Anime · Ghibli · Chibi" },
@@ -72,6 +73,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Nav />
+      <TrackView name="landing_view" page="/personal" />
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden bg-gradient-to-br from-violet-950 via-violet-800 to-purple-700 px-6 pb-24 pt-20 text-center text-white">

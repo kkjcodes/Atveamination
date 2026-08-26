@@ -3,6 +3,7 @@ import Nav from "@/components/nav"
 import TryWidget from "@/components/try-widget"
 import { BRAND } from "@/config/brand"
 import SiteFooter from "@/components/site-footer"
+import TrackView from "@/components/track-view"
 
 export const metadata: Metadata = {
   title: "See yourself as a cartoon",
@@ -14,6 +15,7 @@ export default function TryPage() {
   return (
     <div className="min-h-screen bg-zinc-50">
       <Nav />
+      <TrackView name="landing_view" page="/try" />
       <main className="mx-auto max-w-3xl px-6 py-14">
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight text-zinc-900 sm:text-4xl">

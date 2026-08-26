@@ -12,6 +12,7 @@ import { statusLabel } from "@/lib/copy"
 import DeleteButton from "@/components/delete-button"
 import ShareButtons from "@/components/share-buttons"
 import SiteFooter from "@/components/site-footer"
+import { trackEvent } from "@/lib/client/track"
 
 type TrainingStatus = "pending" | "processing" | "succeeded" | "failed" | "canceled"
 
@@ -236,7 +237,7 @@ export default async function DashboardPage() {
                     <div className="flex gap-2">
                       {proj.status === "succeeded" && proj.finalVideoUrl ? (
                         <Button asChild size="sm" variant="outline" className="flex-1">
-                          <a href={proj.finalVideoUrl} download>Download video</a>
+                          <a href={proj.finalVideoUrl} download onClick={() => trackEvent("download_clicked", { target: "personal" })}>Download video</a>
                         </Button>
                       ) : (
                         <Button asChild size="sm" className="flex-1">

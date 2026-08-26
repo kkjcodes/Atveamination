@@ -8,6 +8,7 @@ import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { moderatePrompt } from "@/lib/ai/moderation"
 import { checkSceneLimit, logUsage, restoreSceneQuota } from "@/lib/limits"
 import { logError } from "@/lib/logger"
+import { emit } from "@/lib/events"
 import { isBudgetError, ensureKickoffBudget } from "@/lib/budget/guard"
 
 async function toDataUri(url: string): Promise<string> {
@@ -303,6 +304,10 @@ CRITICAL constraints: exactly one of each named character in the cast, never mor
         },
       }),
       logUsage(userId, "scene_generate", id, "scene"),
+      // Funnel (D1): the user's very first scene kickoff = first video started.
+      prisma.job.count({ where: { userId, type: "scene_generate" } }).then((n) => {
+        if (n === 0) void emit("first_video_started", {}, userId)
+      }),
     ])
 
     return NextResponse.json({ status: "processing" })

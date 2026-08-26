@@ -86,6 +86,15 @@ function shortDay(iso: string) {
   return iso.slice(5) // "MM-DD"
 }
 
+type FunnelData = {
+  funnel7: Array<{ step: string; count: number; fromPrevPct: number | null }>
+  funnel30: Array<{ step: string; count: number; fromPrevPct: number | null }>
+  latency: {
+    businessRender: { n: number; p50: number | null; p90: number | null; p99: number | null }
+    sceneWallClock: { n: number; p50: number | null; p90: number | null; p99: number | null }
+  }
+}
+
 type SpendData = {
   summary: { todayUsd: number; monthUsd: number; dailyBudgetUsd: number; monthlyBudgetUsd: number; level: string; breaker: boolean }
   byProvider: Array<{ provider: string; usd30d: number; calls30d: number }>
@@ -97,6 +106,7 @@ type SpendData = {
 export default function AdminDashboard() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [spend, setSpend] = useState<SpendData | null>(null)
+  const [funnel, setFunnel] = useState<FunnelData | null>(null)
   const [error, setError] = useState("")
 
   useEffect(() => {
@@ -107,6 +117,10 @@ export default function AdminDashboard() {
     fetch("/api/admin/spend")
       .then((r) => r.json())
       .then(setSpend)
+      .catch(() => {})
+    fetch("/api/admin/funnel")
+      .then((r) => r.json())
+      .then(setFunnel)
       .catch(() => {})
   }, [])
 
@@ -167,6 +181,46 @@ export default function AdminDashboard() {
             <p className="mt-2 text-xs text-zinc-400">
               Last 7 days: {spend.last7Days.map((d) => `$${d.usd.toFixed(0)}`).join(" · ")}
             </p>
+          </Section>
+        )}
+
+        {/* ── Funnel + latency (D1/D2) ── */}
+        {funnel && (
+          <Section title="Visitor funnel + generation latency">
+            <div className="overflow-x-auto rounded-lg border border-zinc-200 bg-white">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-200 text-left text-xs uppercase tracking-wide text-zinc-400">
+                    <th className="px-3 py-2">Step</th>
+                    <th className="px-3 py-2 text-right">7 days</th>
+                    <th className="px-3 py-2 text-right">step conv.</th>
+                    <th className="px-3 py-2 text-right">30 days</th>
+                    <th className="px-3 py-2 text-right">step conv.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {funnel.funnel7.map((row, i) => (
+                    <tr key={row.step} className="border-b border-zinc-100 last:border-0">
+                      <td className="px-3 py-1.5 font-mono text-xs text-zinc-600">{row.step}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{row.count}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-zinc-400">{row.fromPrevPct !== null ? `${row.fromPrevPct}%` : "—"}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums">{funnel.funnel30[i]?.count ?? 0}</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-zinc-400">{funnel.funnel30[i]?.fromPrevPct !== null ? `${funnel.funnel30[i].fromPrevPct}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              {([["Business ad render", funnel.latency.businessRender], ["Personal scene wall-clock", funnel.latency.sceneWallClock]] as const).map(([label, l]) => (
+                <div key={label} className="rounded-lg border border-zinc-200 bg-white p-3 text-sm">
+                  <p className="font-medium text-zinc-700">{label} <span className="text-xs text-zinc-400">({l.n} samples, 30d)</span></p>
+                  <p className="mt-1 tabular-nums text-zinc-600">
+                    p50 {l.p50 !== null ? `${(l.p50 / 1000).toFixed(1)}s` : "—"} · p90 {l.p90 !== null ? `${(l.p90 / 1000).toFixed(1)}s` : "—"} · p99 {l.p99 !== null ? `${(l.p99 / 1000).toFixed(1)}s` : "—"}
+                  </p>
+                </div>
+              ))}
+            </div>
           </Section>
         )}
 

@@ -31,6 +31,8 @@ export type RenderResult = {
   durationSec: number
   totalSceneDurations: number[]
   presenter?: PresenterOutcome
+  // Cumulative ms at each phase boundary (D2 telemetry).
+  phaseMarks?: Record<string, number>
 }
 
 // Palette hex per palette_hint. Used by bold_promo template's band color.
@@ -107,7 +109,13 @@ export async function renderAd(
     : null
 
   const rt0 = Date.now()
-  const rlog = (msg: string) => console.log(`[renderAd] ${adId} ${msg} elapsed=${((Date.now() - rt0) / 1000).toFixed(1)}s`)
+  // Phase marks for latency telemetry (D2) — emitted by the render route as
+  // a render_timing event so p50/p90/p99 are visible on the admin dashboard.
+  const phaseMarks: Record<string, number> = {}
+  const rlog = (msg: string) => {
+    phaseMarks[msg.split(" ")[0]] = Date.now() - rt0
+    console.log(`[renderAd] ${adId} ${msg} elapsed=${((Date.now() - rt0) / 1000).toFixed(1)}s`)
+  }
 
   try {
     // ── 1. Per-scene TTS synthesis (cache-first) ────────────────────────────
@@ -344,6 +352,7 @@ export async function renderAd(
     rlog("phase8 upload done")
 
     return {
+      phaseMarks,
       finalVideoUrl,
       durationSec: totalVideoSec,
       totalSceneDurations: sceneDurations,

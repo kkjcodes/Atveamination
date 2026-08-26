@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react"
 import { readJson } from "@/lib/client/safe-json"
+import { trackEvent } from "@/lib/client/track"
 
 const STYLES = [
   { id: "pixar", label: "Pixar 3D" },
@@ -25,6 +26,7 @@ export default function TryWidget({ compact = false }: { compact?: boolean }) {
   const [dragOver, setDragOver] = useState(false)
 
   async function run(file: File) {
+    trackEvent("demo_started", { style })
     setError(null)
     setPhase("working")
     setSourceUrl(URL.createObjectURL(file))
@@ -44,6 +46,7 @@ export default function TryWidget({ compact = false }: { compact?: boolean }) {
       setSourceUrl(body.source_url ?? null)
       setResultUrl(body.result_url)
       setPhase("done")
+      trackEvent("demo_completed", { style })
     } catch {
       setPhase("idle")
       setError("Something went wrong — give it another try.")

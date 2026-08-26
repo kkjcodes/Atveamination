@@ -20,6 +20,21 @@ export type EventName =
   | "gallery_cta_clicked"
   | "quota_reached"
   | "kill_switch_tripped"
+  // Funnel events (D1) — anonymous session id in props.sid, fired from the
+  // client via POST /api/track. Order matters: adjacent pairs define the
+  // drop-off table on the admin dashboard.
+  | "landing_view"
+  | "demo_started"
+  | "demo_completed"
+  | "signup_started"
+  | "signup_completed"
+  | "first_video_started"
+  | "first_video_completed"
+  | "share_clicked"
+  | "download_clicked"
+  // Latency telemetry (D2) — per-generation timing breakdown in props.
+  | "render_timing"
+  | "scene_timing"
 
 // Fire-and-forget: never blocks the caller, never throws. If the DB is down
 // we don't want a page-load-time landing click to error out.
@@ -38,6 +53,21 @@ export async function emit(
     // Best-effort: log to stderr but don't rethrow.
     console.error("[events] emit failed:", name, (e as Error)?.message)
   }
+}
+
+// Scene wall-clock telemetry (D2): the scene_generate Job row is created at
+// kickoff, so (now - job.createdAt) is the user-perceived wait. Fired from
+// the webhooks when a scene's video lands.
+export async function emitSceneTiming(sceneId: string, userId: string | null = null): Promise<void> {
+  try {
+    const job = await prisma.job.findFirst({
+      where: { entityId: sceneId, type: "scene_generate" },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, userId: true },
+    })
+    if (!job) return
+    void emit("scene_timing", { sceneId, totalMs: Date.now() - job.createdAt.getTime() }, userId ?? job.userId)
+  } catch { /* telemetry never throws */ }
 }
 
 // Aggregated metrics for the admin dashboard. Kept as pure DB queries so

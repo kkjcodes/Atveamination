@@ -3,6 +3,7 @@ import Nav from "@/components/nav"
 import { HeroVideo } from "@/components/hero-video"
 import { BRAND } from "@/config/brand"
 import SiteFooter from "@/components/site-footer"
+import TrackView from "@/components/track-view"
 
 // Public /business marketing content. Rendered by app/business/page.tsx
 // when the visitor is anonymous. Signed-in users see the workspace instead.
@@ -14,6 +15,7 @@ export default function BusinessMarketing() {
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Nav />
+      <TrackView name="landing_view" page="/business" />
 
       {/* ── Hero ─────────────────────────────────────────────────────────── */}
       <section className="px-6 pt-16 pb-14">

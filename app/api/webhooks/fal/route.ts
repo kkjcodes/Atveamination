@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/client"
 import { restoreSceneQuota } from "@/lib/limits"
+import { emitSceneTiming } from "@/lib/events"
 import { replicate, MODELS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
@@ -115,6 +116,7 @@ async function submitLipSync(sceneId: string, videoUrl: string, audioUrl: string
   } catch (e) {
     console.error("[webhook/fal] lipsync submit failed, falling back to raw clip:", (e as Error)?.message)
     await prisma.scene.update({ where: { id: sceneId }, data: { generationPhase: "done" } })
+    void emitSceneTiming(sceneId)
   }
 }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/db/client"
 import { restoreSceneQuota } from "@/lib/limits"
+import { emitSceneTiming } from "@/lib/events"
 import { replicate, MODELS, STYLE_HINTS } from "@/lib/replicate/client"
 import { fal, FAL_MODELS, languageForVoice, kokoroSpeedForBudget } from "@/lib/fal/client"
 import { mirrorUrlToBlob } from "@/lib/storage/client"
@@ -237,6 +238,7 @@ export async function POST(req: NextRequest) {
         where: { id: lipSyncScene.id },
         data: { videoClipUrl, generationPhase: "done" },
       })
+      void emitSceneTiming(lipSyncScene.id)
     } catch (e) {
       console.error("[webhook/replicate] lipsync handler error:", (e as Error)?.message)
       // Graceful fallback: raw clip is still in videoClipUrl

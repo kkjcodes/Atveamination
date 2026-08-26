@@ -8,6 +8,7 @@ import { logError } from "@/lib/logger"
 import { promises as fs } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
+import { emit } from "@/lib/events"
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -58,6 +59,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const updated = await prisma.project.update({
       where: { id },
       data: { status: "succeeded", finalVideoUrl },
+    })
+
+    // Funnel (D1): the user's first-ever finished video.
+    void prisma.project.count({ where: { userId, status: "succeeded" } }).then((n) => {
+      if (n === 1) void emit("first_video_completed", { projectId: id }, userId)
     })
 
     return NextResponse.json({

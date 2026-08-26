@@ -5,6 +5,7 @@ import { HeroVideo } from "@/components/hero-video"
 import TryWidget from "@/components/try-widget"
 import { BRAND } from "@/config/brand"
 import SiteFooter from "@/components/site-footer"
+import TrackView from "@/components/track-view"
 
 // Root landing = compact two-audience hub. Both segments (personal + business)
 // need a distinct pitch, timing, and proof — a shared page always defaulted
@@ -28,6 +29,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <Nav />
+      <TrackView name="landing_view" page="/" />
 
       {/* ── Brand headline ────────────────────────────────────────────────── */}
       <section className="px-6 pt-16 pb-8 text-center">

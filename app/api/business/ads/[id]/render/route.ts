@@ -190,6 +190,13 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
           durationMs: Date.now() - startedAt,
           segment: "business",
         }, userId)
+        // Latency telemetry (D2): cumulative ms per pipeline phase.
+        void emit("render_timing", {
+          adId,
+          segment: "business",
+          totalMs: Date.now() - startedAt,
+          ...result.phaseMarks,
+        }, userId)
       } finally {
         const { promises: fs } = await import("fs")
         await fs.rm(workDir, { recursive: true, force: true }).catch(() => {})

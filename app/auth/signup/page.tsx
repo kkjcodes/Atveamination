@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useState } from "react"
+import { useEffect, Suspense, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { signIn } from "next-auth/react"
@@ -10,9 +10,11 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { safeRedirect } from "@/lib/safe-redirect"
+import { trackEvent } from "@/lib/client/track"
 
 // Next.js 15 requires useSearchParams() to be wrapped in a Suspense boundary.
 export default function SignupPage() {
+  useEffect(() => { trackEvent("signup_started") }, [])
   return (
     <Suspense fallback={null}>
       <SignupPageInner />

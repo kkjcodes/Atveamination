@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs"
 import { prisma } from "@/lib/db/client"
 import { rateLimit } from "@/lib/rate-limit"
 import { validateEmailDomain } from "@/lib/auth/email-validation"
+import { emit } from "@/lib/events"
 
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown"
@@ -75,6 +76,8 @@ export async function POST(request: NextRequest) {
     },
     select: { id: true, email: true, name: true },
   })
+
+  void emit("signup_completed", { segment: validSegment ?? null }, user.id)
 
   return NextResponse.json({ user }, { status: 201 })
 }

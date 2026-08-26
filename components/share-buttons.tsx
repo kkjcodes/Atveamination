@@ -3,6 +3,7 @@
 import { BRAND } from "@/config/brand"
 
 import { useState } from "react"
+import { trackEvent } from "@/lib/client/track"
 
 const SHARE_TEXT = `I made this AI cartoon video with ${BRAND.shareHandle}!`
 
@@ -36,12 +37,12 @@ export default function ShareButtons({ url, size = "default" }: { url: string; s
 
   return (
     <div className="flex flex-wrap gap-2">
-      <button onClick={copy} className={baseBtn} type="button">
+      <button onClick={() => { trackEvent("share_clicked", { target: "copy" }); void copy() }} className={baseBtn} type="button">
         {copied ? "✓ Copied" : "Copy link"}
       </button>
-      <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className={baseBtn}>WhatsApp</a>
-      <a href={twitterUrl} target="_blank" rel="noopener noreferrer" className={baseBtn}>X / Twitter</a>
-      <a href={facebookUrl} target="_blank" rel="noopener noreferrer" className={baseBtn}>Facebook</a>
+      <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("share_clicked", { target: "whatsapp" })} className={baseBtn}>WhatsApp</a>
+      <a href={twitterUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("share_clicked", { target: "twitter" })} className={baseBtn}>X / Twitter</a>
+      <a href={facebookUrl} target="_blank" rel="noopener noreferrer" onClick={() => trackEvent("share_clicked", { target: "facebook" })} className={baseBtn}>Facebook</a>
     </div>
   )
 }
