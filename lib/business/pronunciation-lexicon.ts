@@ -19,12 +19,13 @@
 // a term missing from this file is described in English in the script
 // instead of being mispronounced — either we say it right, or not at all.
 //
-// Candidates for the next audition batch (NOT in the lexicon yet — the
-// script model must describe these in English until they pass the bench):
-// Diwali, Navratri, Holi, Sravanamasam, Eid, mithai, jalebi, mehndi.
+// Candidates for the next audition batch (NOT in the lexicon — the script
+// model must describe these in English until they pass the bench).
+// FAILED first audition 2026-08-28, phonemes need retuning:
+//   Navratri, mehndi, mithai, Ganesh Chaturthi.
 
 // word/phrase (case-insensitive, whole-word) → misaki phoneme string.
-// All entries below ear-benched 2026-08-23 (rounds 1-2, Konark ad words).
+// Ear-benched: 2026-08-23 (Konark ad words), 2026-08-28 (festival batch).
 export const PRONUNCIATION_LEXICON: Record<string, string> = {
   "Raksha Bandhan": "ɹˈɑkʃə bˈʌndən",
   "Rakhis": "ɹˈɑkiz",
@@ -32,6 +33,16 @@ export const PRONUNCIATION_LEXICON: Record<string, string> = {
   "pooja": "pˈudʒɑ",
   "puja": "pˈudʒɑ",
   "kulfi": "kˈʊlfi",
+  "Diwali": "dɪwˈɑli",
+  "Dussehra": "dəʃˈɛɹə",
+  "Holi": "hˈoʊli",
+  "Janmashtami": "dʒənmˈɑʃtəmi",
+  "Onam": "ˈoʊnəm",
+  "Eid": "ˈid",
+  "jalebi": "dʒəlˈeɪbi",
+  "Sravanamasam": "ʃɹɑvənəmˈɑsəm",
+  "Pongal": "pˈoʊŋɡəl",
+  "Sankranti": "sənkɹˈɑnti",
 }
 
 // The whitelist the AdScript prompt shows the model — single source of truth.
