@@ -10,8 +10,11 @@ const mockUpload = vi.fn()
 vi.mock("@/lib/storage/client", () => ({ uploadBlob: (...a: unknown[]) => mockUpload(...a) }))
 
 const mockRun = vi.fn()
+const mockPredGet = vi.fn()
 vi.mock("@/lib/replicate/client", () => ({
-  replicate: { run: (...a: unknown[]) => mockRun(...a) },
+  replicate: {
+    predictions: { create: (...a: unknown[]) => mockRun(...a), get: (...a: unknown[]) => mockPredGet(...a) },
+  },
   MODELS: { fluxKontextPro: "black-forest-labs/flux-kontext-pro" },
   CARTOON_STYLE_PROMPTS: { pixar: "pixar prompt", anime: "anime prompt", comic: "c", watercolor: "w" },
 }))
@@ -33,7 +36,7 @@ beforeEach(() => {
   mockSharpBuffer.mockResolvedValue(Buffer.from("normalized"))
   mockScreen.mockResolvedValue({ block: false })
   mockUpload.mockImplementation(async (path: string) => `https://blob.example.com/${path}`)
-  mockRun.mockResolvedValue(["https://replicate.example.com/out.jpg"])
+  mockRun.mockResolvedValue({ id: "p1", status: "succeeded", output: ["https://replicate.example.com/out.jpg"] })
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) }))
 })
 
@@ -46,7 +49,7 @@ describe("generateDemo", () => {
       expect(r.resultUrl).toContain(`demo/${r.demoId}/result.jpg`)
     }
     // The model gets the NORMALIZED image (EXIF baked), not raw bytes.
-    const input = (mockRun.mock.calls[0][1] as { input: { input_image: string } }).input
+    const input = (mockRun.mock.calls[0][0] as { input: { input_image: string } }).input
     expect(input.input_image).toContain(Buffer.from("normalized").toString("base64"))
   })
 

@@ -70,7 +70,17 @@ export async function generateDemo(
 
   const stylePrompt = CARTOON_STYLE_PROMPTS[style] ?? CARTOON_STYLE_PROMPTS.pixar
   const dataUri = `data:image/jpeg;base64,${normalized.toString("base64")}`
-  const output = await replicate.run(MODELS.fluxKontextPro, {
+
+  // Explicit create-then-poll instead of the SDK's blocking run(): in prod
+  // the SDK's internal wait intermittently stalled ~150s on calls the API
+  // itself finishes in ~10s, blowing past Cloudflare's ~100s limit (seen
+  // 2026-08-28 on the anime style). predictions.create/get stay on the
+  // budget-gated adapter; the deadline keeps the route inside the edge
+  // timeout with a friendly error instead of a blank 524.
+  const t0 = Date.now()
+  const step = (msg: string) => console.log(`[demo] ${demoId} ${msg} at ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+  let pred = await replicate.predictions.create({
+    model: MODELS.fluxKontextPro as `${string}/${string}`,
     input: {
       prompt: stylePrompt,
       input_image: dataUri,
@@ -78,10 +88,25 @@ export async function generateDemo(
       output_format: "jpg",
     },
   })
-  const replicateUrl = Array.isArray(output) ? String(output[0]) : String(output)
+  step(`prediction created (${style})`)
+  const deadline = Date.now() + 75_000
+  while (pred.status === "starting" || pred.status === "processing") {
+    if (Date.now() > deadline) {
+      step(`TIMED OUT in status ${pred.status}`)
+      return { ok: false, status: 504, error: "That took longer than usual — please try again." }
+    }
+    await new Promise((r) => setTimeout(r, 1000))
+    pred = await replicate.predictions.get(pred.id)
+  }
+  step(`prediction ${pred.status}`)
+  if (pred.status !== "succeeded" || !pred.output) {
+    return { ok: false, status: 502, error: "That didn't work this time — give it another try in a moment." }
+  }
+  const replicateUrl = Array.isArray(pred.output) ? String(pred.output[0]) : String(pred.output)
   const res = await fetch(replicateUrl)
   if (!res.ok) throw new Error(`demo result fetch failed: ${res.status}`)
   const resultUrl = await uploadBlob(`demo/${demoId}/result.jpg`, Buffer.from(await res.arrayBuffer()), "image/jpeg")
+  step("result stored")
 
   return { ok: true, demoId, sourceUrl, resultUrl }
 }
