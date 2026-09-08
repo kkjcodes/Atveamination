@@ -6,17 +6,20 @@ import { scriptWithAspect } from "@/lib/business/aspect-variants"
 import type { AdScript } from "@/lib/business/adscript-schema"
 
 describe("captionFragment", () => {
-  it("renders boxed subtitle near the bottom", () => {
+  it("renders boxed subtitle", () => {
     const f = captionFragment("Fresh pastries every morning", 1080, 1920, null)
     expect(f).toContain("drawtext=")
     expect(f).toContain("box=1")
-    expect(f).toContain("Fresh pastries every morning")
+    // Text is preserved (may wrap across lines at the aesthetic size).
+    const rendered = [...f.matchAll(/text='([^']*)'/g)].map((m) => m[1]).join(" ")
+    expect(rendered).toBe("Fresh pastries every morning")
   })
-  it("bottomReserved lifts the caption above a band", () => {
+  it("bottomReserved (e.g. bold_promo band) pushes the caption higher", () => {
+    const yOf = (s: string) => Math.max(...[...s.matchAll(/y=(\d+)/g)].map((m) => Number(m[1])))
     const flat = captionFragment("hello", 1080, 1920, null, 0)
-    const lifted = captionFragment("hello", 1080, 1920, null, 600)
-    const yOf = (s: string) => Number(/y=(\d+)/.exec(s)![1])
-    expect(yOf(lifted)).toBe(yOf(flat) - 600)
+    const lifted = captionFragment("hello", 1080, 1920, null, 900)
+    // A large reserved band lifts the block above the default safe zone.
+    expect(yOf(lifted)).toBeLessThan(yOf(flat))
   })
   it("accent hex renders a brand-color pill with legible text", () => {
     const dark = captionFragment("hello", 1080, 1920, null, 0, "0xC2410C")
@@ -42,11 +45,11 @@ describe("splitCaption", () => {
     expect(lines.join(" ")).toBe(long)
     expect(Math.abs(lines[0].length - lines[1].length)).toBeLessThan(15)
   })
-  it("two-line captions never sink below a readable size", () => {
+  it("long captions wrap to multiple fitted lines at a readable size", () => {
     const long = "A stunning new rental just hit the market in the heart of Ridgeview and it will not last long"
     const f = captionFragment(long, 1080, 1920, null)
     const sizes = [...f.matchAll(/fontsize=(\d+)/g)].map((m) => Number(m[1]))
-    expect(sizes.length).toBe(2)
+    expect(sizes.length).toBeGreaterThanOrEqual(2)
     for (const s of sizes) expect(s).toBeGreaterThanOrEqual(28)
   })
 })

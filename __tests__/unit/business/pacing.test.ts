@@ -33,15 +33,10 @@ describe("scene splitting", () => {
   })
 })
 
-describe("phrase-timed captions", () => {
+describe("captions render statically (phrase-timed reveal removed 2026-09-08)", () => {
   const LONG = "A stunning new rental just hit the market in the heart of Ridgeview and it will not last long"
-  it("two-phrase captions get enable windows covering the scene", () => {
-    const f = captionFragment(LONG, 1080, 1920, null, 0, null, 6)
-    expect(f).toContain("enable='between(t,0,3.000)'")
-    expect(f).toContain("enable='between(t,3.000,6.000)'")
-  })
-  it("short captions and unknown durations keep the static layout", () => {
-    expect(captionFragment("hello", 1080, 1920, null, 0, null, 6)).not.toContain("enable=")
+  it("no enable-window flicker — captions hold for the whole scene", () => {
     expect(captionFragment(LONG, 1080, 1920, null)).not.toContain("enable=")
+    expect(captionFragment("hello", 1080, 1920, null)).not.toContain("enable=")
   })
 })

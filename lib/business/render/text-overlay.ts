@@ -53,6 +53,72 @@ export function fitFontSize(text: string, frameWidth: number, maxSize: number): 
   return Math.max(24, Math.min(maxSize, sizeByFit))
 }
 
+// Usable text width inside the caption box, at a given frame width.
+export function usableTextWidth(frameWidth: number): number {
+  return Math.max(200, frameWidth - BOX_PADDING - COSMETIC_MARGIN)
+}
+
+// Does `text` fit on ONE line within `frameWidth` at `fontSize`?
+export function lineFits(text: string, frameWidth: number, fontSize: number): boolean {
+  return text.length * AVG_CHAR_WIDTH_RATIO * fontSize <= usableTextWidth(frameWidth)
+}
+
+// Greedy word-wrap `text` into lines that each fit within `frameWidth` at
+// `fontSize`. A single word longer than the line is left whole (better one
+// over-wide rare word than a mid-word chop) — but the caller shrinks the size
+// until even that fits, so in practice every line fits. Pure + deterministic.
+export function wrapToWidth(text: string, frameWidth: number, fontSize: number): string[] {
+  const words = text.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return []
+  const lines: string[] = []
+  let cur = ""
+  for (const w of words) {
+    const candidate = cur ? `${cur} ${w}` : w
+    if (cur && !lineFits(candidate, frameWidth, fontSize)) {
+      lines.push(cur)
+      cur = w
+    } else {
+      cur = candidate
+    }
+  }
+  if (cur) lines.push(cur)
+  return lines
+}
+
+// Lay out a caption so EVERY line fits within the frame — no overflow ever,
+// regardless of caption length. This replaces the old 2-line-max split that
+// silently clipped long captions off both edges (the 2026-09-08 regression).
+//
+// Strategy: start at the aesthetic size, wrap to width; if that needs more
+// than `maxLines`, step the size down and re-wrap until it fits within the
+// line budget or hits the readable floor. Returns the final lines + size,
+// with a hard guarantee that each returned line fits at the returned size.
+export function layoutCaption(
+  text: string,
+  frameWidth: number,
+  frameHeight: number,
+  maxLines = 3,
+): { lines: string[]; fontSize: number } {
+  const clean = text.trim()
+  if (!clean) return { lines: [], fontSize: Math.round(frameHeight * 0.032) }
+  const startSize = Math.round(frameHeight * 0.032) // ~61px on 1920
+  const floor = Math.max(18, Math.round(frameHeight * 0.018)) // ~35px on 1920
+  let size = startSize
+  let lines = wrapToWidth(clean, frameWidth, size)
+  while (lines.length > maxLines && size > floor) {
+    size = Math.max(floor, size - 2)
+    lines = wrapToWidth(clean, frameWidth, size)
+  }
+  // Final safety: if any single line still doesn't fit at this size (a very
+  // long word, or we hit the floor with too many words), shrink until the
+  // widest line fits. Guarantees the render invariant the tests assert.
+  while (lines.some((l) => !lineFits(l, frameWidth, size)) && size > 12) {
+    size -= 1
+    lines = wrapToWidth(clean, frameWidth, size)
+  }
+  return { lines, fontSize: size }
+}
+
 // Build a per-scene drawtext filter fragment. Returns a string that can be
 // appended to a filter chain (comma-separated). Null-guards missing font.
 export function drawtextFragment(
@@ -162,6 +228,28 @@ export function isLightHex(hex: string): boolean {
   return 0.299 * r + 0.587 * g + 0.114 * b > 150
 }
 
+// Fraction of frame height kept clear at the BOTTOM for platform UI (IG/TikTok
+// caption + music ticker + button rail). Research: keep ≥ ~500px clear on a
+// 1920-tall frame (~26%). The caption block's lowest pixel sits at or above
+// this line — the 2026-09-08 fix for captions rendered under the platform UI.
+export const CAPTION_BOTTOM_SAFE_FRAC = 0.26
+
+// Y of the lowest caption line's box-top, given how many lines and their size.
+// Exported so the render-QC test can assert the whole block stays in the safe
+// zone without re-deriving the geometry.
+export function captionBlockTopY(
+  outHeight: number,
+  fontSize: number,
+  lineCount: number,
+  lineGap: number,
+  bottomReserved: number,
+): number {
+  const safeBottom = Math.max(bottomReserved, Math.round(outHeight * CAPTION_BOTTOM_SAFE_FRAC))
+  const lowestLineTop = outHeight - safeBottom - fontSize
+  const blockHeight = lineCount * fontSize + (lineCount - 1) * lineGap
+  return lowestLineTop - (blockHeight - fontSize)
+}
+
 export function captionFragment(
   text: string,
   outWidth: number,
@@ -172,39 +260,23 @@ export function captionFragment(
   // pill instead of the flat black box (post-mortem: the black band read as
   // unbranded). Null keeps the black-box look.
   accentHex: string | null = null,
-  // When the scene's duration is known and the caption splits into two
-  // phrases, each phrase shows during its half of the scene (P3: text that
-  // reveals in sync with the narration reads better and stays larger than
-  // two stacked lines competing for the frame).
-  durationSec: number | null = null,
 ): string {
   const font = fontPath ? `fontfile='${fontPath}'` : `font='sans'`
-  const lines = splitCaption(text)
-  const size = Math.min(...lines.map((l) => fitFontSize(l, outWidth, Math.round(outHeight * 0.032))))
-  const margin = Math.round(outHeight * 0.02)
-  const lineGap = Math.round(size * 0.45)
+  // layoutCaption guarantees every line fits within the frame at `fontSize`
+  // (no more clipped-off-both-edges captions), wrapping to up to 3 lines and
+  // shrinking as needed.
+  const { lines, fontSize } = layoutCaption(text, outWidth, outHeight)
+  if (lines.length === 0) return ""
+  const lineGap = Math.round(fontSize * 0.4)
   const boxColor = accentHex ? `${accentHex}@0.88` : "0x00000080"
   const fontColor = accentHex && isLightHex(accentHex) ? "0x1A1A1A" : "0xFFFFFF"
 
-  // Phrase-timed reveal: two phrases, one bottom line, swapped mid-scene.
-  if (lines.length === 2 && durationSec && durationSec > 2) {
-    const y = outHeight - bottomReserved - margin - size
-    const mid = (durationSec / 2).toFixed(3)
-    const end = durationSec.toFixed(3)
-    return lines
-      .map((line, i) => {
-        const window = i === 0 ? `between(t,0,${mid})` : `between(t,${mid},${end})`
-        return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${size}:fontcolor=${fontColor}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=14:enable='${window}'`
-      })
-      .join(",")
-  }
-
-  // Stack from the bottom up.
+  // Anchor the block so its lowest line clears the platform UI safe zone.
+  const topY = captionBlockTopY(outHeight, fontSize, lines.length, lineGap, bottomReserved)
   return lines
     .map((line, i) => {
-      const fromBottom = (lines.length - 1 - i) * (size + lineGap)
-      const y = outHeight - bottomReserved - margin - size - fromBottom
-      return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${size}:fontcolor=${fontColor}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=14`
+      const y = topY + i * (fontSize + lineGap)
+      return `drawtext=text='${escapeDrawtext(line)}':${font}:fontsize=${fontSize}:fontcolor=${fontColor}:x=(w-text_w)/2:y=${y}:box=1:boxcolor=${boxColor}:boxborderw=14`
     })
     .join(",")
 }

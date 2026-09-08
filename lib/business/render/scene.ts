@@ -107,7 +107,7 @@ async function renderCleanModern(input: SceneRenderInput): Promise<void> {
   const text = overlayTextForScene(scene)
   const extras = [
     input.captionText
-      ? captionFragment(input.captionText, width, height, captionFontPath, 0, paletteBgHex, durationSec)
+      ? captionFragment(input.captionText, width, height, captionFontPath, 0, paletteBgHex)
       : text ? drawtextFragment(text, textPosition, width, height, captionFontPath) : null,
     input.contactStripText ? contactStripFragment(input.contactStripText, width, height, captionFontPath) : null,
   ].filter(Boolean)
@@ -277,7 +277,7 @@ export async function renderPresenterScene(
       overlays.push(`drawtext=text='${escapeDrawtext(lines[i])}':${font}:fontsize=${fontSize}:fontcolor=0xF5F5F0:x=(w-text_w)/2:y=${y}:borderw=3:bordercolor=0x00000080`)
     }
   } else if (input.captionText) {
-    overlays.push(captionFragment(input.captionText, width, height, captionFontPath, 0, paletteBgHex, input.durationSec))
+    overlays.push(captionFragment(input.captionText, width, height, captionFontPath, 0, paletteBgHex))
   } else if (text) {
     overlays.push(drawtextFragment(text, textPosition, width, height, captionFontPath))
   }
